@@ -1,0 +1,111 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix vwm: <http://ontologie.politie.nl/def/vwm#> .
+@prefix dpm: <http://ontologie.politie.nl/def/dpm#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonsBeschrijving ;
+  sh:property [
+    sh:path dpm:lastName ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:bsn ;
+    sh:datatype xsd:integer ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:birthDate ;
+    sh:datatype xsd:date ;
+    sh:minCount 1 ;
+    sh:order 3 ;
+  ] .
+
+vwm:IncidentBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:IncidentBeschrijving ;
+  sh:property [
+    sh:path dpm:location ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:timestamp ;
+    sh:datatype xsd:dateTime ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:OndernemingsBeschrijving ;
+  sh:property [
+    sh:path dpm:name ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:legalForm ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:otherLegalForm ;
+    sh:datatype xsd:string ;
+    sh:order 3 ;
+  ] .
+
+vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:VoertuigBeschrijving ;
+  sh:property [
+    sh:path dpm:brand ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:color ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:licensePlate ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 3 ;
+  ] .
+
+vwm:IncidentToestandsWeergaveShape a sh:NodeShape ;
+  sh:targetClass vwm:IncidentToestandsWeergave ;
+  sh:property [
+    sh:path vwm:beschrijving ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path vwm:heeftBestand ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:PersoonToestandsWeergaveShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonToestandsWeergave ;
+  sh:property [
+    sh:path vwm:beschrijving ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path vwm:heeftBestand ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .

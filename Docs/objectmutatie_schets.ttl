@@ -1,0 +1,35 @@
+@prefix vwm: <urn:absolute:vwm#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+# Klassen
+vwm:ObjectMutatie a owl:Class .
+vwm:GegevensObjectInContext a owl:Class .
+vwm:ToestandsBeschrijving a owl:Class .
+
+# Eigenschappen
+vwm:heeftBetrekkingOp a owl:ObjectProperty ;
+  rdfs:domain vwm:ObjectMutatie ;
+  rdfs:range vwm:GegevensObjectInContext .
+
+vwm:produceert a owl:ObjectProperty ;
+  rdfs:domain vwm:ObjectMutatie ;
+  rdfs:range vwm:ToestandsBeschrijving .
+
+vwm:verwijdertLogisch a owl:ObjectProperty ;
+  rdfs:domain vwm:ObjectMutatie ;
+  rdfs:range vwm:ToestandsBeschrijving .
+
+vwm:datumTijd a owl:DatatypeProperty ;
+  rdfs:domain vwm:ObjectMutatie ;
+  rdfs:range xsd:dateTime .
+
+# Voorbeeld-instanties
+vwm:mutatie_2026_04_02_183100 a vwm:ObjectMutatie ;
+  vwm:datumTijd "2026-04-02T18:31:00"^^xsd:dateTime ;
+  vwm:heeftBetrekkingOp vwm:goic_123x ;
+  vwm:produceert vwm:tb_001 .
+
+vwm:goic_123x a vwm:GegevensObjectInContext .
+vwm:tb_001 a vwm:ToestandsBeschrijving .

@@ -1,0 +1,1125 @@
+# baseURI: urn:absolute:vwm
+
+@prefix : <urn:absolute:vwm#> .
+@prefix owl: <http://www.w3.org/2002/07/owl#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xml: <http://www.w3.org/XML/1998/namespace> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+<urn:Autorisatiekenmerkset_3>
+  a :Autorisatiekenmerkset ;
+  rdfs:label "Wpg artikel 9 met status actief en beperkte deelbaarheid" ;
+  :AutorisatiekenmerksetCode "3	" ;
+  :Deelbaarheid "BeperktDeelbaar" ;
+  :Rubriceringsniveau "Intern" ;
+  :Status "Actief" ;
+  :Verwerkingsdoel "WpgArtikel9" ;
+  :Verwerkingssubdoel "NietGespecificeerd" ;
+  :Werkgebied "WpgDomein" ;
+.
+<urn:absolute:vwm>
+  a owl:Ontology ;
+  rdfs:comment "Ontologie van het verwerkingsmodel, gebaseerd op de afspraken gemaakt in het werkgroepoverleg van 13 januari 2022." ;
+  owl:versionIRI <urn:absolute:1> ;
+.
+:APKgeldigTot
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigRDW ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:AannemenMelding
+  a owl:Class ;
+  rdfs:subClassOf :Activiteit ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:minCardinality 1 ;
+      owl:onProperty :melding ;
+    ] ;
+.
+:AantekeningOpPersoon
+  a owl:DatatypeProperty ;
+  rdfs:domain :HandelingskaderPersoon ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Activiteit
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:ActiviteitBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :activiteit ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :activiteitStatus ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :activiteitType ;
+    ] ;
+.
+:ActiviteitStatus
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:ActiviteitStatus_Afgerond
+  a :ActiviteitStatus ;
+  :omschrijving "Afgerond" ;
+.
+:ActiviteitStatus_Open
+  a :ActiviteitStatus ;
+  :omschrijving "Open" ;
+.
+:ActiviteitType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:ActiviteitType_InrichtenOnderzoeksteam
+  a :ActiviteitType ;
+  :omschrijving "InrichtenOnderzoeksteam" ;
+.
+:ActiviteitType_MeldingAannemen
+  a :ActiviteitType ;
+  :omschrijving "MeldingAannemen" ;
+.
+:ActiviteitUrgentieType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:AdministratiefBVV
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+.
+:AdministratiefGBA
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :BSN ;
+    ] ;
+.
+:AdministratiefRDW
+  a owl:Class ;
+  rdfs:subClassOf :voertuigBeschrijving ;
+  owl:disjointWith :VoertuigSignalement ;
+.
+:AdminstratiefPolitie
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+.
+:AfgelezenKMstand
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigSignalement ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:AfgelezenKenteken
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigSignalement ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:AfnemersindicatieBVV
+  a owl:Class ;
+  rdfs:subClassOf :AdministratiefBVV ;
+  owl:disjointWith :PersonaliaBVV ;
+.
+:AfnemersindicatieGBA
+  a owl:Class ;
+  rdfs:subClassOf :AdministratiefGBA ;
+  owl:disjointWith :PersonaliaGBA ;
+.
+:AfnemersindicatieRDW
+  a owl:Class ;
+  rdfs:subClassOf :AdministratiefRDW ;
+  owl:disjointWith :VoertuigRDW ;
+.
+:AutorisatieContainer
+  a owl:Class ;
+  rdfs:label "Container" ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :autorisatiekenmerkset ;
+    ] ;
+.
+:AutorisatieContainer_1
+  a :AutorisatieContainer ;
+  rdfs:label "Container tbv Wpg Artikel 8 zonder weigeringsgrond en status actief" ;
+  :autorisatiekenmerkset :Autorisatiekenmerkset_1 ;
+.
+:AutorisatieContainer_2
+  a :AutorisatieContainer ;
+  rdfs:label "Container tbv beheer afnemersindicaties" ;
+  :autorisatiekenmerkset :Autorisatiekenmerkset_2 ;
+.
+:Autorisatiekenmerk
+  a owl:DatatypeProperty ;
+.
+:Autorisatiekenmerkset
+  a owl:Class ;
+.
+:AutorisatiekenmerksetCode
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:Autorisatiekenmerkset_1
+  a :Autorisatiekenmerkset ;
+  rdfs:label "Wpg artikel 8 zonder weigeringsgrond met status actief" ;
+  :AutorisatiekenmerksetCode "1" ;
+  :Deelbaarheid "WpgDomein" ;
+  :Rubriceringsniveau "Intern" ;
+  :Status "Actief" ;
+  :Verwerkingsdoel "WpgArtikel8" ;
+  :Verwerkingssubdoel "NietGespecificeerd" ;
+  :Werkgebied "WpgDomein" ;
+.
+:Autorisatiekenmerkset_2
+  a :Autorisatiekenmerkset ;
+  rdfs:label "Beheer van afnemersindicaties" ;
+  :AutorisatiekenmerksetCode "99" ;
+  :Deelbaarheid "BeperktDeelbaar" ;
+  :Rubriceringsniveau "Intern" ;
+  :Status "Actief" ;
+  :Verwerkingsdoel "Basisobjecten" ;
+  :Verwerkingssubdoel "NietGespecificeerd" ;
+  :Werkgebied "Beheer" ;
+.
+:BSN
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdministratiefGBA ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:BVV-nummer
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdministratiefBVV ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Bedrijfsobject
+  a owl:Class ;
+.
+:BedrijfsobjectBeschrijving
+  a owl:Class ;
+  rdfs:label "Beschrijving" ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :bedrijfsobjectMutatie ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :herbruikbaarheidsAanduiding ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:maxCardinality 1 ;
+      owl:onProperty :bedrijfsobjectBeschrijvingGebaseerdOp ;
+    ] ;
+.
+:BedrijfsobjectInContext
+  a owl:Class ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :IV-zaak ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :bedrijfsobject ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:maxCardinality 1 ;
+      owl:onProperty :bedrijfsobjectMutatie ;
+    ] ;
+.
+:BedrijfsobjectInContextVerbinding
+  a owl:Class ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :bedrijfsobjectInContextNaarContext ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :bedrijfsobjectInContextVanContext ;
+    ] ;
+.
+:BedrijfsobjectInContextVerbindingType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:BedrijfsobjectInContextVerbindingType_Co-Eigenaar
+  a :BedrijfsobjectInContextVerbindingType ;
+  :omschrijving "Co-Eigenaar" ;
+.
+:BedrijfsobjectMutatie
+  a owl:Class ;
+  rdfs:label "ObjectMutatie" ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :IV-transactie ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :IV-zaak ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :creatieDatumTijd ;
+    ] ;
+.
+:Bejegening
+  a owl:DatatypeProperty ;
+  rdfs:domain :HandelingskaderPersoon ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Betrokkenheidskenmerkset
+  a owl:Class ;
+  rdfs:label "Betr.km.set" ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :IV-zaak ;
+    ] ;
+.
+:BijzonderePersoonsgegevens
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+.
+:Contactinformatie
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+.
+:DatumGeboorte
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdminstratiefPolitie ;
+  rdfs:domain :PersonaliaBVV ;
+  rdfs:domain :PersonaliaGBA ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Deelbaarheid
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:DirecteBetrokkenheid
+  a owl:Class ;
+  rdfs:subClassOf :Betrokkenheidskenmerkset ;
+.
+:DirecteBetrokkenheidType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:Gebruiker
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:GebruikerBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :gebruiker ;
+    ] ;
+.
+:GebruikerBeschrijving_1_1
+  a :GebruikerBeschrijving ;
+  :gebruiker :Gebruiker_1 ;
+  :inlogNaam "ISC23428" ;
+  :naamGebruiker "Karel De Vries" ;
+.
+:GebruikerBeschrijving_2_1
+  a :GebruikerBeschrijving ;
+  :gebruiker :Gebruiker_2 ;
+  :inlogNaam "ISC90633" ;
+  :naamGebruiker "Chantal Du Bois" ;
+.
+:GebruikerHoedanigheid
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:Gebruiker_1
+  a :Gebruiker ;
+  :ID-bedrijfsobject "Gebruiker_1"^^xsd:anyURI ;
+.
+:Gebruiker_2
+  a :Gebruiker ;
+  :ID-bedrijfsobject "Gebruiker_2"^^xsd:anyURI ;
+.
+:Geloofsovertuiging
+  a owl:DatatypeProperty ;
+  rdfs:domain :BijzonderePersoonsgegevens ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Geslacht
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:Geslachtsaanduiding
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdminstratiefPolitie ;
+  rdfs:domain :PersonaliaBVV ;
+  rdfs:domain :PersonaliaGBA ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Getuige
+  a owl:Class ;
+  rdfs:subClassOf :PersoonsHoedanigheid ;
+.
+:GetuigeBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :PersoonsHoedanigheidBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :getuige ;
+    ] ;
+.
+:GevarenclassificatiePersoon
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :omschrijving ;
+    ] ;
+.
+:GevarenclassificatiePersoon_Alcoholist
+  a :GevarenclassificatiePersoon ;
+  :omschrijving "Alcoholist" ;
+.
+:GevarenclassificatiePersoon_Vuurwapengevaarlijk
+  a :GevarenclassificatiePersoon ;
+  :omschrijving "Vuurwapengevaarlijk" ;
+.
+:Gevarenklasse
+  a owl:DatatypeProperty ;
+  rdfs:domain :HandelingskaderPersoon ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Haardracht
+  a owl:DatatypeProperty ;
+  rdfs:domain :PersoonSignalement ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Haarkleur
+  a owl:DatatypeProperty ;
+  rdfs:domain :PersoonSignalement ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:HandelingskaderPersoon
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+.
+:Herbruikbaarheidsaanduiding
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:ID-bedrijfsobject
+  a owl:DatatypeProperty ;
+  rdfs:comment "Persistente URI tbv het aanduiden van 'het ding in de werkeljkheid'." ;
+  rdfs:domain :Bedrijfsobject ;
+  rdfs:label "ID (URI)" ;
+  rdfs:range xsd:anyURI ;
+.
+:IV-Transactie
+  a owl:Class ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :gebruiker ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:minCardinality 1 ;
+      owl:onProperty :IV-zaak ;
+    ] ;
+.
+:IV-Zaak
+  a owl:Class ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :autorisatieContainer ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:minCardinality 1 ;
+      owl:onProperty :politieProcesType ;
+    ] ;
+.
+:IV-ZaakRelatieMetIV-Zaak
+  a owl:Class ;
+  rdfs:label "IV-Zaak relatie met IV-Zaak" ;
+.
+:IV-ZaakRelatieMetIV-ZaakType
+  a owl:DatatypeProperty ;
+  rdfs:domain :IV-ZaakRelatieMetIV-Zaak ;
+  rdfs:label "IV-Zaak relatie met IV-Zaak Type" ;
+.
+:IV-ZaakRelatieNaarIV-Zaak
+  a owl:ObjectProperty ;
+  rdfs:domain :IV-ZaakRelatieMetIV-Zaak ;
+  rdfs:label "Relatie naar IV-Zaak" ;
+  rdfs:range :IV-Zaak ;
+.
+:IV-ZaakRelatieVanIV-Zaak
+  a owl:ObjectProperty ;
+  rdfs:domain :IV-ZaakRelatieMetIV-Zaak ;
+  rdfs:label "Relatie van IV-Zaak" ;
+  rdfs:range :IV-Zaak ;
+.
+:IV-Zaak_1
+  a :IV-Zaak ;
+.
+:IV-transactie
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectMutatie ;
+  rdfs:range :IV-Transactie ;
+.
+:IV-zaak
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectMutatie ;
+  rdfs:domain :Betrokkenheidskenmerkset ;
+  rdfs:range :IV-Zaak ;
+.
+:IndirecteBetrokkenheid
+  a owl:Class ;
+  rdfs:subClassOf :Betrokkenheidskenmerkset ;
+.
+:IndirecteBetrokkenheidType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:InrichtenOnderzoek
+  a owl:Class ;
+  rdfs:subClassOf :Activiteit ;
+.
+:Kenteken
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigRDW ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:Kleding
+  a owl:DatatypeProperty ;
+  rdfs:domain :PersoonSignalement ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:LidVakbond
+  a owl:DatatypeProperty ;
+  rdfs:domain :BijzonderePersoonsgegevens ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Locatie
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:LocatieBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :locatie ;
+    ] ;
+.
+:Melder
+  a owl:Class ;
+  rdfs:subClassOf :PersoonsHoedanigheid ;
+.
+:MelderBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :PersoonsHoedanigheidBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :melder ;
+    ] ;
+.
+:Melder_1
+  a :Melder ;
+.
+:Melding
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:MeldingBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :melding ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :tijdstipMelding ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :verbalisant ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:maxCardinality 1 ;
+      owl:onProperty :melder ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:minCardinality 1 ;
+      owl:onProperty :meldingType ;
+    ] ;
+.
+:MeldingType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:MultiMedia
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:MultiMediaBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :multiMedia ;
+    ] ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :multiMediaType ;
+    ] ;
+.
+:MultiMediaType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:MultiMediaType_Audio
+  a :MultiMediaType ;
+  :omschrijving "Audio" ;
+.
+:MultiMediaType_Video
+  a :MultiMediaType ;
+  :omschrijving "Video" ;
+.
+:Nationaliteit
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdminstratiefPolitie ;
+  rdfs:domain :PersonaliaBVV ;
+  rdfs:domain :PersonaliaGBA ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Oogkleur
+  a owl:DatatypeProperty ;
+  rdfs:domain :PersoonSignalement ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:PersonaliaBVV
+  a owl:Class ;
+  rdfs:subClassOf :AdministratiefBVV ;
+.
+:PersonaliaGBA
+  a owl:Class ;
+  rdfs:subClassOf :AdministratiefGBA ;
+.
+:Persoon
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:PersoonBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :persoon ;
+    ] ;
+.
+:PersoonSignalement
+  a owl:Class ;
+  rdfs:subClassOf :PersoonBeschrijving ;
+.
+:PersoonsHoedanigheid
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:PersoonsHoedanigheidBeschrijving
+  a owl:Class ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :persoon ;
+    ] ;
+.
+:PolitieProcesType
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:PolitieProcesType_BeheerAfnemerindicaties
+  a :PolitieProcesType ;
+  :omschrijving "BeheerAfnemerindicaties" ;
+.
+:PolitieProcesType_TGO
+  a :PolitieProcesType ;
+  :omschrijving "Uitvoeren onderzoek in de aanpak 'team grootschalig onderzoek'" ;
+.
+:PolitieProcesType_VVC
+  a :PolitieProcesType ;
+  :omschrijving "Afhandelen melding VVC" ;
+.
+:PolitiekeVoorkeur
+  a owl:DatatypeProperty ;
+  rdfs:domain :BijzonderePersoonsgegevens ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Referentielijst
+  a owl:Class ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :omschrijving ;
+    ] ;
+.
+:Roepnaam
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdminstratiefPolitie ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:Rubriceringsniveau
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:SignalerenPersoon
+  a owl:Class ;
+  rdfs:subClassOf :Activiteit ;
+.
+:SignalerenVoertuig
+  a owl:Class ;
+  rdfs:subClassOf :Activiteit ;
+.
+:Status
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:Tatoeage
+  a owl:DatatypeProperty ;
+  rdfs:domain :PersoonSignalement ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:VIN
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigRDW ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:Verbalisant
+  a owl:Class ;
+  rdfs:subClassOf :GebruikerHoedanigheid ;
+.
+:Verwerkingsdoel
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:Verwerkingssubdoel
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:Voertuig
+  a owl:Class ;
+  rdfs:subClassOf :Bedrijfsobject ;
+.
+:VoertuigKleur
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigRDW ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:VoertuigRDW
+  a owl:Class ;
+  rdfs:subClassOf :AdministratiefRDW ;
+.
+:VoertuigSignalement
+  a owl:Class ;
+  a owl:DatatypeProperty ;
+  rdfs:subClassOf :voertuigBeschrijving ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:Voertuigkleur
+  a owl:Class ;
+  rdfs:subClassOf :Referentielijst ;
+.
+:Voornaam
+  a owl:DatatypeProperty ;
+  rdfs:domain :AdminstratiefPolitie ;
+  rdfs:domain :PersonaliaBVV ;
+  rdfs:domain :PersonaliaGBA ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:WaargenomenKleur
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigSignalement ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:Werkgebied
+  a owl:DatatypeProperty ;
+  rdfs:domain :Autorisatiekenmerkset ;
+  rdfs:subPropertyOf :Autorisatiekenmerk ;
+.
+:ZichtbareSchade
+  a owl:DatatypeProperty ;
+  rdfs:domain :VoertuigSignalement ;
+  rdfs:subPropertyOf :voertuigBeschrijving ;
+.
+:activiteit
+  a owl:ObjectProperty ;
+  rdfs:domain :ActiviteitBeschrijving ;
+  rdfs:range :Activiteit ;
+.
+:activiteitJournaal
+  a owl:DatatypeProperty ;
+  rdfs:domain :ActiviteitBeschrijving ;
+.
+:activiteitStatus
+  a owl:DatatypeProperty ;
+  rdfs:domain :ActiviteitBeschrijving ;
+  rdfs:range :ActiviteitStatus ;
+.
+:activiteitType
+  a owl:DatatypeProperty ;
+  rdfs:domain :ActiviteitBeschrijving ;
+  rdfs:range :ActiviteitType ;
+.
+:activiteitUrgentieType
+  a owl:DatatypeProperty ;
+  rdfs:domain :ActiviteitBeschrijving ;
+  rdfs:range :ActiviteitUrgentieType ;
+.
+:afnemersindicatie
+  a owl:DatatypeProperty ;
+  rdfs:domain :AfnemersindicatieBVV ;
+  rdfs:domain :AfnemersindicatieGBA ;
+  rdfs:domain :AfnemersindicatieRDW ;
+  rdfs:range xsd:boolean ;
+  rdfs:subPropertyOf :afnemersindicatieBeheer ;
+.
+:afnemersindicatieBeheer
+  a owl:DatatypeProperty ;
+.
+:autorisatieContainer
+  a owl:ObjectProperty ;
+  rdfs:domain :IV-Zaak ;
+  rdfs:range :AutorisatieContainer ;
+.
+:autorisatiekenmerkset
+  a owl:ObjectProperty ;
+  rdfs:domain :AutorisatieContainer ;
+  rdfs:range :Autorisatiekenmerkset ;
+.
+:bedrijfsobject
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectInContext ;
+  rdfs:range :Bedrijfsobject ;
+.
+:bedrijfsobjectBeschrijving
+  a owl:DatatypeProperty ;
+.
+:bedrijfsobjectBeschrijvingGebaseerdOp
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectBeschrijving ;
+  rdfs:range :BedrijfsobjectBeschrijving ;
+  rdfs:subPropertyOf :bedrijfsobjectBeschrijving ;
+.
+:bedrijfsobjectInContextNaarContext
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectInContextVerbinding ;
+  rdfs:label "ContextrelatieNaar" ;
+  rdfs:range :BedrijfsobjectInContext ;
+.
+:bedrijfsobjectInContextVanContext
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectInContextVerbinding ;
+  rdfs:label "ContextrelatieVan" ;
+  rdfs:range :BedrijfsobjectInContext ;
+.
+:bedrijfsobjectInContextVerbindingType
+  a owl:DatatypeProperty ;
+  rdfs:domain :BedrijfsobjectInContextVerbinding ;
+  rdfs:range :BedrijfsobjectInContextVerbindingType ;
+.
+:bedrijfsobjectMutatie
+  a owl:ObjectProperty ;
+  rdfs:domain :BedrijfsobjectBeschrijving ;
+  rdfs:domain :BedrijfsobjectInContext ;
+  rdfs:range :BedrijfsobjectMutatie ;
+.
+:beschrijvingIncident
+  a owl:DatatypeProperty ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:subPropertyOf :meldingBeschrijving ;
+.
+:betrokkenheidskenmerk
+  a owl:DatatypeProperty ;
+.
+:creatieDatumTijd
+  a owl:DatatypeProperty ;
+  rdfs:domain :BedrijfsobjectMutatie ;
+  rdfs:range xsd:dateTime ;
+.
+:directeBetrokkenheidType
+  a owl:DatatypeProperty ;
+  rdfs:domain :DirecteBetrokkenheid ;
+  rdfs:range :DirecteBetrokkenheidType ;
+  rdfs:subPropertyOf :betrokkenheidskenmerk ;
+.
+:doorhaalDatumTijd
+  a owl:DatatypeProperty ;
+  rdfs:domain :BedrijfsobjectBeschrijving ;
+  rdfs:domain :BedrijfsobjectInContextVerbinding ;
+  rdfs:range xsd:dateTime ;
+.
+:eMailAdresPrive
+  a owl:DatatypeProperty ;
+  rdfs:domain :Contactinformatie ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:eMailadresPrive
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:einddatumAfnemersindicatie
+  a owl:DatatypeProperty ;
+  rdfs:domain :AfnemersindicatieBVV ;
+  rdfs:domain :AfnemersindicatieGBA ;
+  rdfs:domain :AfnemersindicatieRDW ;
+  rdfs:subPropertyOf :afnemersindicatieBeheer ;
+.
+:gebruiker
+  a owl:ObjectProperty ;
+  rdfs:domain :DirecteBetrokkenheid ;
+  rdfs:domain :GebruikerBeschrijving ;
+  rdfs:domain :IV-Transactie ;
+  rdfs:range :Gebruiker ;
+.
+:gebruikerHoedanigheid
+  a owl:DatatypeProperty ;
+  rdfs:range :GebruikerHoedanigheid ;
+.
+:geldigTot
+  a owl:DatatypeProperty ;
+  rdfs:domain :Referentielijst ;
+  rdfs:range xsd:dateTime ;
+.
+:getuige
+  a owl:ObjectProperty ;
+  rdfs:domain :GetuigeBeschrijving ;
+  rdfs:range :Getuige ;
+.
+:herbruikbaarheidsAanduiding
+  a owl:DatatypeProperty ;
+  rdfs:comment "Niet alle beschrijvingen kunnen hergebruikt worden omdat de kwaliteit te laag is. Heeft niets te maken met autorisatie maar met de kwaliteit van de gegevens zelf." ;
+  rdfs:domain :BedrijfsobjectBeschrijving ;
+  rdfs:label "Herbruikbaarheid beschrijving" ;
+  rdfs:range :Herbruikbaarheidsaanduiding ;
+  rdfs:subPropertyOf :bedrijfsobjectBeschrijving ;
+.
+:indirecteBetrokkenheidType
+  a owl:DatatypeProperty ;
+  rdfs:domain :IndirecteBetrokkenheid ;
+  rdfs:range :IndirecteBetrokkenheidType ;
+  rdfs:subPropertyOf :betrokkenheidskenmerk ;
+.
+:indirecteBetrokkenheidWaarde
+  a owl:DatatypeProperty ;
+  rdfs:domain :IndirecteBetrokkenheid ;
+  rdfs:subPropertyOf :betrokkenheidskenmerk ;
+.
+:ingangsdatumAfnemersindicatie
+  a owl:DatatypeProperty ;
+  rdfs:domain :AfnemersindicatieBVV ;
+  rdfs:domain :AfnemersindicatieGBA ;
+  rdfs:domain :AfnemersindicatieRDW ;
+  rdfs:range xsd:dateTimeStamp ;
+  rdfs:subPropertyOf :afnemersindicatieBeheer ;
+.
+:inlogNaam
+  a owl:DatatypeProperty ;
+  rdfs:domain :GebruikerBeschrijving ;
+.
+:locatie
+  a owl:ObjectProperty ;
+  rdfs:domain :LocatieBeschrijving ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:range :Locatie ;
+.
+:locatieAdres
+  a owl:ObjectProperty ;
+  rdfs:domain :LocatieBeschrijving ;
+.
+:locatieToelichting
+  a owl:DatatypeProperty ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:subPropertyOf :meldingBeschrijving ;
+.
+:melder
+  a owl:ObjectProperty ;
+  rdfs:domain :MelderBeschrijving ;
+  rdfs:range :Melder ;
+.
+:melding
+  a owl:ObjectProperty ;
+  rdfs:domain :AannemenMelding ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:range :Melding ;
+.
+:meldingBeschrijving
+  a owl:DatatypeProperty ;
+.
+:meldingType
+  a owl:ObjectProperty ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:range :MeldingType ;
+.
+:multiMedia
+  a owl:ObjectProperty ;
+  rdfs:domain :MultiMediaBeschrijving ;
+  rdfs:range :MultiMedia ;
+.
+:multiMediaOpslagFormaat
+  a owl:DatatypeProperty ;
+  rdfs:domain :MultiMediaBeschrijving ;
+.
+:multiMediaOpslagLocatie
+  a owl:DatatypeProperty ;
+  rdfs:domain :MultiMediaBeschrijving ;
+.
+:multiMediaType
+  a owl:DatatypeProperty ;
+  rdfs:domain :MultiMediaBeschrijving ;
+  rdfs:range :MultiMediaType ;
+.
+:naamGebruiker
+  a owl:DatatypeProperty ;
+  rdfs:domain :GebruikerBeschrijving ;
+.
+:omschrijving
+  a owl:DatatypeProperty ;
+  rdfs:domain :Referentielijst ;
+  rdfs:range xsd:string ;
+.
+:persoon
+  a owl:ObjectProperty ;
+  rdfs:domain :PersoonBeschrijving ;
+  rdfs:domain :PersoonsHoedanigheidBeschrijving ;
+  rdfs:range :Persoon ;
+.
+:persoonBeschrijving
+  a owl:DatatypeProperty ;
+.
+:politieProcesType
+  a owl:ObjectProperty ;
+  rdfs:domain :IV-Zaak ;
+  rdfs:range :PolitieProcesType ;
+.
+:telefoonnummerPrive
+  a owl:DatatypeProperty ;
+  rdfs:domain :Contactinformatie ;
+  rdfs:subPropertyOf :persoonBeschrijving ;
+.
+:tijdstipMelding
+  a owl:DatatypeProperty ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:range xsd:dateTime ;
+  rdfs:subPropertyOf :meldingBeschrijving ;
+.
+:toelichting
+  a owl:DatatypeProperty ;
+  rdfs:domain :Referentielijst ;
+  rdfs:range xsd:string ;
+.
+:verbalisant
+  a owl:DatatypeProperty ;
+  rdfs:domain :MeldingBeschrijving ;
+  rdfs:range :Verbalisant ;
+  rdfs:subPropertyOf :gebruikerHoedanigheid ;
+.
+:voertuig
+  a owl:ObjectProperty ;
+  rdfs:domain :voertuigBeschrijving ;
+  rdfs:range :Voertuig ;
+.
+:voertuigBeschrijving
+  a owl:DatatypeProperty ;
+  rdfs:subClassOf :BedrijfsobjectBeschrijving ;
+  rdfs:subClassOf [
+      a owl:Restriction ;
+      owl:cardinality 1 ;
+      owl:onProperty :voertuig ;
+    ] ;
+.
+[
+  a owl:AllDisjointClasses ;
+  owl:members (
+      :AannemenMelding
+      :InrichtenOnderzoek
+      :SignalerenPersoon
+      :SignalerenVoertuig
+    ) ;
+].
+[
+  a owl:AllDisjointClasses ;
+  owl:members (
+      :Activiteit
+      :Melding
+      :MultiMedia
+      :Persoon
+      :Voertuig
+    ) ;
+].
+[
+  a owl:AllDisjointClasses ;
+  owl:members (
+      :ActiviteitBeschrijving
+      :MeldingBeschrijving
+      :MultiMediaBeschrijving
+      :PersoonBeschrijving
+      :voertuigBeschrijving
+    ) ;
+].
+[
+  a owl:AllDisjointClasses ;
+  owl:members (
+      :AfnemersindicatieGBA
+      :HandelingskaderPersoon
+      :PersonaliaGBA
+      :PersoonSignalement
+    ) ;
+].
+[
+  a owl:AllDisjointClasses ;
+  owl:members (
+      :Geslacht
+      :GevarenclassificatiePersoon
+      :Voertuigkleur
+    ) ;
+].
