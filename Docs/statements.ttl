@@ -151,9 +151,6 @@
 <http://ontologie.politie.nl/def/vwm#RelatieRegel> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "RelatieRegel" .
 
-<http://ontologie.politie.nl/def/vwm#RolRegel> a <http://www.w3.org/2002/07/owl#Class>;
-  <http://www.w3.org/2000/01/rdf-schema#label> "RolRegel" .
-
 <http://ontologie.politie.nl/def/vwm#vanClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#label> "vanClass" .
 
@@ -178,6 +175,30 @@
 <http://ontologie.politie.nl/def/vwm#roleKey> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
   <http://www.w3.org/2000/01/rdf-schema#label> "roleKey" .
 
+<http://ontologie.politie.nl/def/vwm#lookupEndpoint> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupEndpoint" .
+
+<http://ontologie.politie.nl/def/vwm#lookupQueryParam> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupQueryParam" .
+
+<http://ontologie.politie.nl/def/vwm#lookupSourceField> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupSourceField" .
+
+<http://ontologie.politie.nl/def/vwm#lookupTrigger> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupTrigger" .
+
+<http://ontologie.politie.nl/def/vwm#lookupDebounceMs> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupDebounceMs" .
+
+<http://ontologie.politie.nl/def/vwm#lookupMinLength> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupMinLength" .
+
 <http://ontologie.politie.nl/def/vwm#isIdentifier> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
   <http://www.w3.org/2000/01/rdf-schema#label> "isIdentifier" .
 
@@ -190,38 +211,6 @@
   <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Incident>;
   <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Vehicle>;
   <http://ontologie.politie.nl/def/vwm#predicate> <http://ontologie.politie.nl/def/dpm#involvesVehicle> .
-
-<http://ontologie.politie.nl/def/vwm#RolRegel_Bestuurder> a <http://ontologie.politie.nl/def/vwm#RolRegel>;
-  <http://ontologie.politie.nl/def/vwm#rolType> <http://ontologie.politie.nl/def/vwm#RolType_Bestuurder>;
-  <http://ontologie.politie.nl/def/vwm#rolTbClass> <http://ontologie.politie.nl/def/vwm#PersoonVoertuigRol>;
-  <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Person>;
-  <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Vehicle>;
-  <http://ontologie.politie.nl/def/vwm#vanProperty> <http://ontologie.politie.nl/def/vwm#heeftPersoon>;
-  <http://ontologie.politie.nl/def/vwm#naarProperty> <http://ontologie.politie.nl/def/vwm#heeftVoertuig> .
-
-<http://ontologie.politie.nl/def/vwm#RolRegel_Eigenaar> a <http://ontologie.politie.nl/def/vwm#RolRegel>;
-  <http://ontologie.politie.nl/def/vwm#rolType> <http://ontologie.politie.nl/def/vwm#RolType_Eigenaar>;
-  <http://ontologie.politie.nl/def/vwm#rolTbClass> <http://ontologie.politie.nl/def/vwm#PersoonVoertuigRol>;
-  <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Person>;
-  <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Vehicle>;
-  <http://ontologie.politie.nl/def/vwm#vanProperty> <http://ontologie.politie.nl/def/vwm#heeftPersoon>;
-  <http://ontologie.politie.nl/def/vwm#naarProperty> <http://ontologie.politie.nl/def/vwm#heeftVoertuig> .
-
-<http://ontologie.politie.nl/def/vwm#RolRegel_Getuige> a <http://ontologie.politie.nl/def/vwm#RolRegel>;
-  <http://ontologie.politie.nl/def/vwm#rolType> <http://ontologie.politie.nl/def/vwm#RolType_Getuige>;
-  <http://ontologie.politie.nl/def/vwm#rolTbClass> <http://ontologie.politie.nl/def/vwm#PersoonIncidentRol>;
-  <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Person>;
-  <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Incident>;
-  <http://ontologie.politie.nl/def/vwm#vanProperty> <http://ontologie.politie.nl/def/vwm#heeftPersoon>;
-  <http://ontologie.politie.nl/def/vwm#naarProperty> <http://ontologie.politie.nl/def/vwm#heeftIncident> .
-
-<http://ontologie.politie.nl/def/vwm#RolRegel_Omstander> a <http://ontologie.politie.nl/def/vwm#RolRegel>;
-  <http://ontologie.politie.nl/def/vwm#rolType> <http://ontologie.politie.nl/def/vwm#RolType_Omstander>;
-  <http://ontologie.politie.nl/def/vwm#rolTbClass> <http://ontologie.politie.nl/def/vwm#PersoonIncidentRol>;
-  <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Person>;
-  <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Incident>;
-  <http://ontologie.politie.nl/def/vwm#vanProperty> <http://ontologie.politie.nl/def/vwm#heeftPersoon>;
-  <http://ontologie.politie.nl/def/vwm#naarProperty> <http://ontologie.politie.nl/def/vwm#heeftIncident> .
 
 <http://ontologie.politie.nl/def/vwm#heeftPersoon> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#RolBeschrijving>;

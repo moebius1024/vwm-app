@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Services\GraphService;
+use App\Services\SjabloonMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str; // Belangrijk voor UUID's
@@ -10,10 +11,12 @@ use Illuminate\Support\Str; // Belangrijk voor UUID's
 class SjabloonController extends Controller
 {
     protected $graphService;
+    protected $metadataService;
 
-    public function __construct(GraphService $graphService)
+    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService)
     {
         $this->graphService = $graphService;
+        $this->metadataService = $metadataService;
     }
 
     /**
@@ -39,7 +42,7 @@ class SjabloonController extends Controller
 
         foreach ($linkedSjablonen as $row) {
             $uri = $row->sjabloon_uri;
-            $info = $this->fetchSjabloon($uri);
+            $info = $this->metadataService->fetchSjabloon($uri);
             $allowed[] = [
                 'sjabloon_uri' => $uri,
                 'label' => $info['sjabloon_label'],
@@ -61,16 +64,35 @@ class SjabloonController extends Controller
             ->all();
 
         $roleUris = array_map(fn ($row) => $row->sjabloon_uri, $linkedRoles);
-        $roleMeta = $this->fetchRolTbMetaByClasses($roleUris);
+        $roleMeta = $this->metadataService->fetchRolTbMetaByClasses($roleUris);
+        $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
         $allowedRoles = [];
         foreach ($linkedRoles as $row) {
-            $meta = $roleMeta[$row->sjabloon_uri] ?? null;
+            $selectorUri = $row->sjabloon_uri;
+            $meta = $roleMeta[$selectorUri] ?? null;
+            $resolvedRoleType = null;
+
+            if (!$meta) {
+                $resolved = $this->metadataService->resolveRoleShapeRuleFromSelector($selectorUri, $roleShapeRules);
+                if ($resolved) {
+                    $resolvedRoleType = $resolved['rolType'] ?? null;
+                    $meta = [
+                        'rolTbClass' => $resolved['rolTbClass'] ?? null,
+                        'vanClass' => $resolved['vanClass'] ?? null,
+                        'naarClass' => $resolved['naarClass'] ?? null,
+                        'vanProperty' => $resolved['vanProperty'] ?? null,
+                        'naarProperty' => $resolved['naarProperty'] ?? null,
+                        'label' => null,
+                    ];
+                }
+            }
+
             if (!$meta) {
                 continue;
             }
             $allowedRoles[] = [
-                'tb_class' => $row->sjabloon_uri,
-                'label' => $meta['label'] ?? null,
+                'tb_class' => $selectorUri,
+                'label' => $meta['label'] ?? ($resolvedRoleType ? $this->metadataService->shortId($resolvedRoleType) : $this->metadataService->shortId($selectorUri)),
                 'van_class' => $meta['vanClass'] ?? null,
                 'naar_class' => $meta['naarClass'] ?? null,
                 'volgorde' => $row->volgorde ?? 1,
@@ -97,7 +119,7 @@ class SjabloonController extends Controller
             'uri' => 'required|string',
         ]);
 
-        $sjabloon = $this->fetchSjabloon($validated['uri']);
+        $sjabloon = $this->metadataService->fetchSjabloon($validated['uri']);
 
         return response()->json([
             'sjabloon_uri' => $validated['uri'],
@@ -112,33 +134,8 @@ class SjabloonController extends Controller
      */
     public function listSjablonen()
     {
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-            SELECT ?sjabloon ?label ?targetClass
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?sjabloon rdfs:subClassOf vwm:ToestandsBeschrijving .
-                    OPTIONAL { ?sjabloon rdfs:label ?label . }
-                    OPTIONAL { ?sjabloon vwm:beschrijftClass ?targetClass . }
-                }
-            }
-            ORDER BY ?label
-        ";
-
-        $rows = $this->graphService->query($query);
-
-        $items = array_map(function ($row) {
-            return [
-                'sjabloon_uri' => $row['sjabloon'],
-                'label' => $row['label'] ?? null,
-                'target_class' => $row['targetClass'] ?? null,
-            ];
-        }, $rows);
-
         return response()->json([
-            'sjablonen' => $items,
+            'sjablonen' => $this->metadataService->listSjablonen(),
         ]);
     }
 
@@ -147,32 +144,8 @@ class SjabloonController extends Controller
      */
     public function listRolTypes()
     {
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-
-            SELECT ?rolType ?roleKey ?label
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?rolType a vwm:RolType ;
-                             vwm:roleKey ?roleKey .
-                    OPTIONAL { ?rolType rdfs:label ?label . }
-                }
-            }
-            ORDER BY ?roleKey
-        ";
-
-        $rows = $this->graphService->query($query);
-        $items = array_map(function ($row) {
-            return [
-                'role_key' => $row['roleKey'],
-                'uri' => $row['rolType'],
-                'label' => $row['label'] ?? null,
-            ];
-        }, $rows);
-
         return response()->json([
-            'roltypes' => $items,
+            'roltypes' => $this->metadataService->listRolTypes(),
         ]);
     }
 
@@ -183,45 +156,8 @@ class SjabloonController extends Controller
     {
         $uris = $request->input('uris', []);
 
-        $values = is_array($uris)
-            ? array_filter($uris, fn ($uri) => is_string($uri) && $uri !== '')
-            : [];
-
-        if (!empty($values)) {
-            $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", array_unique($values)));
-            $query = "
-                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                SELECT ?uri ?label
-                WHERE {
-                    GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                        VALUES ?uri { {$iriList} }
-                        ?uri rdfs:label ?label .
-                    }
-                }
-            ";
-        } else {
-            // Fallback: haal alle labels op zodat UI altijd kan tonen.
-            $query = "
-                PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-                SELECT ?uri ?label
-                WHERE {
-                    GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                        ?uri rdfs:label ?label .
-                    }
-                }
-            ";
-        }
-
-        $rows = $this->graphService->query($query);
-        $labels = [];
-        foreach ($rows as $row) {
-            if (!empty($row['label'])) {
-                $labels[$row['uri']] = $row['label'];
-            }
-        }
-
         return response()->json([
-            'labels' => $labels,
+            'labels' => $this->metadataService->listLabels(is_array($uris) ? $uris : []),
         ]);
     }
 
@@ -230,40 +166,8 @@ class SjabloonController extends Controller
      */
     public function listIdentifiers()
     {
-        $this->assertShapesPresent();
-
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX sh: <http://www.w3.org/ns/shacl#>
-            SELECT ?tbClass ?describedClass ?property
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?shape sh:targetClass ?tbClass ;
-                           sh:property ?propShape .
-                    ?propShape sh:path ?property .
-                    ?property vwm:isIdentifier true .
-                    ?tbClass vwm:beschrijftClass ?describedClass .
-                }
-            }
-            ORDER BY ?tbClass ?property
-        ";
-
-        $rows = $this->graphService->query($query);
-        $map = [];
-        foreach ($rows as $row) {
-            $tbClass = $row['tbClass'];
-            if (!isset($map[$tbClass])) {
-                $map[$tbClass] = [
-                    'tb_class' => $tbClass,
-                    'described_class' => $row['describedClass'],
-                    'properties' => [],
-                ];
-            }
-            $map[$tbClass]['properties'][] = $row['property'];
-        }
-
         return response()->json([
-            'identifiers' => array_values($map),
+            'identifiers' => $this->metadataService->listIdentifiers(),
         ]);
     }
 
@@ -300,11 +204,11 @@ class SjabloonController extends Controller
             return response()->json(['error' => 'Geen dossier gevonden voor deze case'], 422);
         }
 
-        $relatieRegels = $this->fetchRelatieRegels();
-        $rolRegels = $this->fetchRolRegels();
-        $rolTypesByKey = $this->fetchRolTypesByKey();
-        $allowedRolTbClasses = $this->fetchAllowedRolTbClasses($base['transactie_soort_id']);
-        $enforceAllowedRolTb = !empty($allowedRolTbClasses);
+        $relatieRegels = $this->metadataService->fetchRelatieRegels();
+        $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
+        $rolTypesByKey = $this->metadataService->fetchRolTypesByKey();
+        $allowedRoleTbClasses = $this->metadataService->fetchAllowedRoleTbClasses($base['transactie_soort_id'], $roleShapeRules);
+        $enforceAllowedRoleTb = !empty($allowedRoleTbClasses);
 
         // 2. Ondersteun meerdere objecten per scherm (en legacy single-object payload)
         $objects = $request->input('objects');
@@ -331,10 +235,6 @@ class SjabloonController extends Controller
                 'objects.*.data' => 'required|array',
                 'objects.*.data_types' => 'sometimes|array',
                 'roles' => 'sometimes|array',
-                'roles.drivers' => 'sometimes|array',
-                'roles.owners' => 'sometimes|array',
-                'roles.witnesses' => 'sometimes|array',
-                'roles.bystanders' => 'sometimes|array',
                 'roles.items' => 'sometimes|array',
                 'roles.items.*.roleType' => 'sometimes|string',
                 'roles.items.*.roleTbClass' => 'sometimes|string',
@@ -345,6 +245,29 @@ class SjabloonController extends Controller
             ]);
         }
 
+        $tbClasses = array_values(array_filter(array_unique(array_map(function ($object) {
+            return $object['sjabloon_uri'] ?? null;
+        }, $objects))));
+        $valueHintsByTbClass = $this->metadataService->fetchPropertyValueHintsByTbClasses($tbClasses);
+
+        $targetClassLimit = $this->fetchTargetClassLimitForTransactie($base['transactie_soort_id']);
+        if ($targetClassLimit) {
+            $targetClassUri = $targetClassLimit['target_class_uri'];
+            $maxAllowed = $targetClassLimit['max_count'];
+            $newTargetClassCount = count(array_filter($objects, function ($object) use ($targetClassUri) {
+                return ($object['target_class'] ?? null) === $targetClassUri;
+            }));
+
+            if ($newTargetClassCount > 0) {
+                $existingTargetClassCount = $this->countGoicsForCaseByDescribedClass($base['case_id'], $targetClassUri);
+                if (($existingTargetClassCount + $newTargetClassCount) > $maxAllowed) {
+                    return response()->json([
+                        'error' => "Maximaal {$maxAllowed} object(en) toegestaan voor class {$targetClassUri} in dit dossier.",
+                    ], 422);
+                }
+            }
+        }
+
         $objectUris = [];
         $objectMeta = [];
         $allTriples = "";
@@ -352,7 +275,7 @@ class SjabloonController extends Controller
         $vwm = 'http://ontologie.politie.nl/def/vwm#';
 
         // 3. Registreer de processtap + objectmutaties in SQLite
-        $transactieId = DB::transaction(function () use ($base, $objects, &$objectUris, &$allTriples, &$objectMeta, $dossier, $nowIso, $vwm) {
+        $transactieId = DB::transaction(function () use ($base, $objects, &$objectUris, &$allTriples, &$objectMeta, $dossier, $nowIso, $vwm, $valueHintsByTbClass) {
             $transactieId = DB::table('transacties')->insertGetId([
                 'case_id' => $base['case_id'],
                 'transactie_soort_id' => $base['transactie_soort_id'],
@@ -432,9 +355,13 @@ class SjabloonController extends Controller
                 $allTriples .= "<{$mutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
 
                 $dataTypes = $object['data_types'] ?? [];
+                $valueHints = $valueHintsByTbClass[$tbClass] ?? [];
 
                 foreach ($object['data'] as $propertyUri => $value) {
-                    $valueType = $dataTypes[$propertyUri] ?? 'literal';
+                    $valueType = $this->resolveValueType(
+                        $dataTypes[$propertyUri] ?? null,
+                        $valueHints[$propertyUri] ?? null
+                    );
 
                     if (is_array($value)) {
                         foreach ($value as $entry) {
@@ -499,7 +426,7 @@ class SjabloonController extends Controller
             }
         }
 
-        $describedByTb = $this->fetchDescribedClassByTbClasses(array_values(array_unique($tbByGoic)));
+        $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_values(array_unique($tbByGoic)));
         $goicMetaById = [];
         foreach ($existingGoics as $goic) {
             $tbClass = $tbByGoic[$goic->id] ?? null;
@@ -526,11 +453,11 @@ class SjabloonController extends Controller
 
         // 4. Rollen (generiek via rol-regels)
         $roles = $request->input('roles', []);
-        $roleItems = $roles['items'] ?? [];
+        $roleItems = is_array($roles['items'] ?? null) ? $roles['items'] : [];
         $roleTbClassesFromItems = array_values(array_filter(array_map(function ($item) {
             return $item['roleTbClass'] ?? null;
         }, $roleItems)));
-        $rolTbMetaByClass = $this->fetchRolTbMetaByClasses($roleTbClassesFromItems);
+        $rolTbMetaByClass = $this->metadataService->fetchRolTbMetaByClasses($roleTbClassesFromItems);
 
         $clientMap = [];
         foreach ($objectMeta as $meta) {
@@ -539,22 +466,27 @@ class SjabloonController extends Controller
             }
         }
 
-        // Legacy keys omzetten naar generieke role-items (via roleKey in RDF)
-        $legacyMap = [
-            'drivers' => $rolTypesByKey['drivers'] ?? null,
-            'owners' => $rolTypesByKey['owners'] ?? null,
-            'witnesses' => $rolTypesByKey['witnesses'] ?? null,
-            'bystanders' => $rolTypesByKey['bystanders'] ?? null,
-        ];
-        foreach ($legacyMap as $key => $roleTypeUri) {
-            if (!$roleTypeUri || empty($roles[$key]) || !is_array($roles[$key])) {
+        // Legacy payloads: elke key onder roles (behalve items) is een roleKey uit RDF.
+        foreach ($roles as $roleKey => $legacyRoles) {
+            if ($roleKey === 'items' || !is_array($legacyRoles)) {
                 continue;
             }
-            foreach ($roles[$key] as $role) {
+
+            $roleTypeUri = $rolTypesByKey[$roleKey] ?? null;
+            if (!$roleTypeUri) {
+                continue;
+            }
+
+            foreach ($legacyRoles as $role) {
+                if (!is_array($role)) {
+                    continue;
+                }
+
+                [$fromId, $toId] = $this->extractLegacyRoleEndpoints($role);
                 $roleItems[] = [
                     'roleType' => $roleTypeUri,
-                    'fromId' => $role['personId'] ?? $role['fromId'] ?? null,
-                    'toId' => $role['vehicleId'] ?? $role['incidentId'] ?? $role['toId'] ?? null,
+                    'fromId' => $fromId,
+                    'toId' => $toId,
                 ];
             }
         }
@@ -577,8 +509,24 @@ class SjabloonController extends Controller
             }
 
             if (!$roleMeta && !empty($roleType)) {
-                $regel = $rolRegels[$roleType] ?? null;
+                $regel = $roleShapeRules[$roleType] ?? null;
                 if ($regel) {
+                    $roleMeta = [
+                        'rolTbClass' => $regel['rolTbClass'] ?? null,
+                        'vanClass' => $regel['vanClass'] ?? null,
+                        'naarClass' => $regel['naarClass'] ?? null,
+                        'vanProperty' => $regel['vanProperty'] ?? null,
+                        'naarProperty' => $regel['naarProperty'] ?? null,
+                    ];
+                }
+            }
+
+            if (!$roleMeta && !empty($roleTbClass)) {
+                $regel = $this->metadataService->resolveRoleShapeRuleFromSelector($roleTbClass, $roleShapeRules);
+                if ($regel) {
+                    if (empty($roleType) && !empty($regel['rolType'])) {
+                        $roleType = $regel['rolType'];
+                    }
                     $roleMeta = [
                         'rolTbClass' => $regel['rolTbClass'] ?? null,
                         'vanClass' => $regel['vanClass'] ?? null,
@@ -593,7 +541,7 @@ class SjabloonController extends Controller
                 continue;
             }
 
-            if ($enforceAllowedRolTb && !in_array($roleMeta['rolTbClass'], $allowedRolTbClasses, true)) {
+            if ($enforceAllowedRoleTb && !in_array($roleMeta['rolTbClass'], $allowedRoleTbClasses, true)) {
                 continue;
             }
 
@@ -759,265 +707,171 @@ class SjabloonController extends Controller
             }
         }
 
+        if ($type === 'integer') {
+            $lexical = trim((string) $value);
+            if (preg_match('/^-?\d+$/', $lexical)) {
+                return $this->toSparqlTypedLiteral($lexical, 'http://www.w3.org/2001/XMLSchema#integer');
+            }
+        }
+
+        if ($type === 'decimal') {
+            $lexical = trim((string) $value);
+            if (preg_match('/^-?\d+(?:\.\d+)?$/', $lexical)) {
+                return $this->toSparqlTypedLiteral($lexical, 'http://www.w3.org/2001/XMLSchema#decimal');
+            }
+        }
+
+        if ($type === 'date') {
+            $lexical = trim((string) $value);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $lexical)) {
+                return $this->toSparqlTypedLiteral($lexical, 'http://www.w3.org/2001/XMLSchema#date');
+            }
+        }
+
+        if ($type === 'dateTime') {
+            $lexical = $this->normalizeDateTimeLexical((string) $value);
+            if ($lexical !== null) {
+                return $this->toSparqlTypedLiteral($lexical, 'http://www.w3.org/2001/XMLSchema#dateTime');
+            }
+        }
+
         return $this->toSparqlLiteral($value);
     }
 
-    private function fetchSjabloon(string $sjabloonUri): array
+    private function toSparqlTypedLiteral(string $value, string $datatypeIri): string
     {
-        $this->assertShapesPresent();
+        $escaped = str_replace(
+            ["\\", "\"", "\n", "\r", "\t"],
+            ["\\\\", "\\\"", "\\n", "\\r", "\\t"],
+            $value
+        );
 
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-            PREFIX sh: <http://www.w3.org/ns/shacl#>
+        return "\"{$escaped}\"^^<{$datatypeIri}>";
+    }
 
-            SELECT ?sjabloonLabel ?label ?property ?datatype ?nodeKind ?order ?targetClass
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    BIND(<{$sjabloonUri}> as ?sjabloon)
-                    OPTIONAL { ?sjabloon rdfs:label ?sjabloonLabel . }
-                    OPTIONAL { ?sjabloon vwm:beschrijftClass ?targetClass . }
-                    ?shape sh:targetClass ?sjabloon ;
-                           sh:property ?propShape .
-                    ?propShape sh:path ?property .
-                    OPTIONAL { ?propShape sh:datatype ?datatype . }
-                    OPTIONAL { ?propShape sh:nodeKind ?nodeKind . }
-                    OPTIONAL { ?propShape sh:order ?order . }
-                    OPTIONAL { ?property rdfs:label ?label . }
-                }
-            }
-            ORDER BY ?order ?label
-        ";
+    private function normalizeDateTimeLexical(string $value): ?string
+    {
+        $trimmed = trim($value);
+        if ($trimmed === '') {
+            return null;
+        }
 
-        $rows = $this->graphService->query($query);
-        $sjabloonLabel = $rows[0]['sjabloonLabel'] ?? null;
-        $targetClass = $rows[0]['targetClass'] ?? null;
-        $velden = array_map(function ($row) {
-            $property = $row['property'] ?? '';
-            $label = $row['label'] ?? $this->shortId($property);
-            $datatype = $row['datatype'] ?? null;
-            $nodeKind = $row['nodeKind'] ?? null;
-            $order = $row['order'] ?? null;
-            $type = $this->mapVeldType($property, $datatype, $nodeKind);
+        $normalized = str_replace(' ', 'T', $trimmed);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $normalized)) {
+            return $normalized . 'T00:00:00';
+        }
 
-            return [
-                'label' => $label,
-                'property' => $property,
-                'type' => $type,
-                'volgorde' => $order !== null ? (int) $order : 999,
-            ];
-        }, $rows);
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $normalized)) {
+            return $normalized . ':00';
+        }
 
-        usort($velden, function ($a, $b) {
-            $order = ($a['volgorde'] ?? 999) <=> ($b['volgorde'] ?? 999);
-            if ($order !== 0) return $order;
-            return strcmp($a['label'] ?? '', $b['label'] ?? '');
-        });
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/', $normalized)) {
+            return substr($normalized, 0, 16) . ':00Z';
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}[+-]\d{2}:\d{2}$/', $normalized)) {
+            return substr($normalized, 0, 16) . ':00' . substr($normalized, 16);
+        }
+
+        if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/', $normalized)) {
+            return $normalized;
+        }
+
+        return null;
+    }
+
+    private function resolveValueType(?string $explicitType, ?string $hintType): string
+    {
+        if ($explicitType === 'uri') {
+            return $explicitType;
+        }
+
+        if (is_string($explicitType) && in_array($explicitType, ['integer', 'decimal', 'date', 'dateTime'], true)) {
+            return $explicitType;
+        }
+
+        if (is_string($hintType) && in_array($hintType, ['uri', 'integer', 'decimal', 'date', 'dateTime'], true)) {
+            return $hintType;
+        }
+
+        if ($explicitType === 'literal') {
+            return 'literal';
+        }
+
+        return 'literal';
+    }
+
+    private function fetchTargetClassLimitForTransactie(int $transactieSoortId): ?array
+    {
+        $row = DB::table('transactie_soorten')
+            ->where('id', $transactieSoortId)
+            ->first(['max_target_class_uri', 'max_target_class_count']);
+
+        $targetClassUri = $row->max_target_class_uri ?? null;
+        $maxCount = isset($row->max_target_class_count) ? (int) $row->max_target_class_count : null;
+
+        if (!is_string($targetClassUri) || trim($targetClassUri) === '' || !is_int($maxCount) || $maxCount < 1) {
+            return null;
+        }
 
         return [
-            'sjabloon_label' => $sjabloonLabel,
-            'target_class' => $targetClass,
-            'velden' => $velden,
+            'target_class_uri' => trim($targetClassUri),
+            'max_count' => $maxCount,
         ];
     }
 
-    private function mapVeldType(string $property, ?string $datatype, ?string $nodeKind): string
+    private function countGoicsForCaseByDescribedClass(int $caseId, string $describedClassUri): int
     {
-        if ($property === 'http://ontologie.politie.nl/def/vwm#heeftBestand') {
-            return 'file';
+        $tbClasses = $this->metadataService->fetchTbClassesByDescribedClass($describedClassUri);
+        if (empty($tbClasses)) {
+            return 0;
         }
 
-        if ($datatype === 'http://www.w3.org/2001/XMLSchema#date') {
-            return 'date';
-        }
-
-        if ($datatype === 'http://www.w3.org/2001/XMLSchema#dateTime') {
-            return 'datetime-local';
-        }
-
-        if (in_array($datatype, [
-            'http://www.w3.org/2001/XMLSchema#integer',
-            'http://www.w3.org/2001/XMLSchema#decimal',
-        ], true)) {
-            return 'number';
-        }
-
-        if ($nodeKind === 'http://www.w3.org/ns/shacl#IRI') {
-            return 'url';
-        }
-
-        return 'text';
-    }
-
-    private function assertShapesPresent(): void
-    {
-        $query = "
-            PREFIX sh: <http://www.w3.org/ns/shacl#>
-            SELECT (COUNT(?shape) AS ?shapeCount)
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?shape a sh:NodeShape .
-                }
-            }
-        ";
-
-        $rows = $this->graphService->query($query);
-        $count = (int) ($rows[0]['shapeCount'] ?? 0);
-        if ($count === 0) {
-            throw new \RuntimeException('Geen SHACL shapes gevonden in GraphDB. Laad Docs/shapes.ttl in de ontologie-graph.');
-        }
-    }
-
-    private function shortId(string $uri): string
-    {
-        if ($uri === '') return '';
-        $trimmed = rtrim($uri, '/');
-        if (str_contains($trimmed, '#')) {
-            $parts = explode('#', $trimmed);
-            return $parts[count($parts) - 1] ?? $uri;
-        }
-        $parts = explode('/', $trimmed);
-        return $parts[count($parts) - 1] ?? $uri;
-    }
-
-    private function fetchRelatieRegels(): array
-    {
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            SELECT ?vanClass ?naarClass ?predicate
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?regel a vwm:RelatieRegel ;
-                           vwm:vanClass ?vanClass ;
-                           vwm:naarClass ?naarClass ;
-                           vwm:predicate ?predicate .
-                }
-            }
-        ";
-
-        return $this->graphService->query($query);
-    }
-
-    private function fetchRolRegels(): array
-    {
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            SELECT ?rolType ?rolTbClass ?vanClass ?naarClass ?vanProperty ?naarProperty
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?regel a vwm:RolRegel ;
-                           vwm:rolType ?rolType ;
-                           vwm:rolTbClass ?rolTbClass ;
-                           vwm:vanClass ?vanClass ;
-                           vwm:naarClass ?naarClass ;
-                           vwm:vanProperty ?vanProperty ;
-                           vwm:naarProperty ?naarProperty .
-                }
-            }
-        ";
-
-        $rows = $this->graphService->query($query);
-        $regels = [];
-        foreach ($rows as $row) {
-            $regels[$row['rolType']] = $row;
-        }
-        return $regels;
-    }
-
-    private function fetchRolTbMetaByClasses(array $tbClasses): array
-    {
-        $values = array_filter(array_unique(array_values($tbClasses)));
-        if (empty($values)) {
-            return [];
-        }
-
-        $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", $values));
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-            SELECT ?tbClass ?vanClass ?naarClass ?vanProperty ?naarProperty ?label
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    VALUES ?tbClass { {$iriList} }
-                    ?tbClass vwm:vanClass ?vanClass ;
-                             vwm:naarClass ?naarClass ;
-                             vwm:vanProperty ?vanProperty ;
-                             vwm:naarProperty ?naarProperty .
-                    OPTIONAL { ?tbClass rdfs:label ?label . }
-                }
-            }
-        ";
-
-        $rows = $this->graphService->query($query);
-        $map = [];
-        foreach ($rows as $row) {
-            $map[$row['tbClass']] = [
-                'rolTbClass' => $row['tbClass'],
-                'vanClass' => $row['vanClass'],
-                'naarClass' => $row['naarClass'],
-                'vanProperty' => $row['vanProperty'],
-                'naarProperty' => $row['naarProperty'],
-                'label' => $row['label'] ?? null,
-            ];
-        }
-        return $map;
-    }
-
-    private function fetchDescribedClassByTbClasses(array $tbClasses): array
-    {
-        $values = array_filter(array_unique(array_values($tbClasses)));
-        if (empty($values)) {
-            return [];
-        }
-
-        $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", $values));
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            SELECT ?tbClass ?describedClass
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    VALUES ?tbClass { {$iriList} }
-                    ?tbClass vwm:beschrijftClass ?describedClass .
-                }
-            }
-        ";
-
-        $rows = $this->graphService->query($query);
-        $map = [];
-        foreach ($rows as $row) {
-            $map[$row['tbClass']] = $row['describedClass'];
-        }
-        return $map;
-    }
-
-    private function fetchRolTypesByKey(): array
-    {
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            SELECT ?roleKey ?rolType
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?rolType a vwm:RolType ;
-                             vwm:roleKey ?roleKey .
-                }
-            }
-        ";
-
-        $rows = $this->graphService->query($query);
-        $map = [];
-        foreach ($rows as $row) {
-            $map[$row['roleKey']] = $row['rolType'];
-        }
-        return $map;
-    }
-
-    private function fetchAllowedRolTbClasses(int $transactieSoortId): array
-    {
-        return DB::table('transactie_soort_sjabloon')
-            ->where('transactie_soort_id', $transactieSoortId)
-            ->where('type', 'rol')
-            ->orderBy('volgorde')
-            ->pluck('sjabloon_uri')
+        $dossierIds = DB::table('dossiers')
+            ->where('case_id', $caseId)
+            ->pluck('id')
             ->all();
+        if (empty($dossierIds)) {
+            return 0;
+        }
+
+        return (int) DB::table('object_mutaties')
+            ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
+            ->whereIn('gegevens_objecten_in_context.dossier_id', $dossierIds)
+            ->whereIn('object_mutaties.sjabloon_uri', $tbClasses)
+            ->whereNotNull('object_mutaties.gegevens_object_in_context_id')
+            ->distinct()
+            ->count('object_mutaties.gegevens_object_in_context_id');
+    }
+
+    private function extractLegacyRoleEndpoints(array $role): array
+    {
+        $fromId = isset($role['fromId']) && is_string($role['fromId']) && $role['fromId'] !== ''
+            ? $role['fromId']
+            : null;
+        $toId = isset($role['toId']) && is_string($role['toId']) && $role['toId'] !== ''
+            ? $role['toId']
+            : null;
+
+        $idValues = [];
+        foreach ($role as $key => $value) {
+            if (!is_string($key) || !str_ends_with($key, 'Id')) {
+                continue;
+            }
+            if (!is_string($value) || $value === '') {
+                continue;
+            }
+            $idValues[] = $value;
+        }
+
+        if ($fromId === null && !empty($idValues)) {
+            $fromId = $idValues[0] ?? null;
+        }
+
+        if ($toId === null && count($idValues) > 1) {
+            $toId = $idValues[1] ?? null;
+        }
+
+        return [$fromId, $toId];
     }
 }

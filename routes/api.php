@@ -19,6 +19,6 @@ Route::get('/labels', [SjabloonController::class, 'listLabels']);
 Route::post('/labels', [SjabloonController::class, 'listLabels']);
 Route::get('/identifiers', [SjabloonController::class, 'listIdentifiers']);
 Route::get('/shacl/validate', [SjabloonController::class, 'validateShacl']);
-Route::get('/merken', [VehicleMakeController::class, 'index']);
+Route::get('/voertuig/kenteken', [VehicleMakeController::class, 'lookupKenteken']);
 Route::post('/bestand/upload', [BestandController::class, 'upload']);
 Route::post('/mutatie', [App\Http\Controllers\SjabloonController::class, 'storeMutatie']);

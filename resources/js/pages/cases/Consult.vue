@@ -358,6 +358,15 @@ watch(() => props.dossiers, () => {
       </div>
     </div>
 
+    <div class="flex justify-end">
+      <Link
+        class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30"
+        :href="start()"
+      >
+        Terug naar start
+      </Link>
+    </div>
+
     <div class="relative flex-1 rounded-2xl border border-sidebar-border/70 bg-white p-8 shadow-sm dark:border-sidebar-border dark:bg-gray-900">
       <div class="mx-auto max-w-5xl space-y-6">
         <div class="rounded-xl border border-emerald-200/70 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-300/20 dark:bg-emerald-900/20 dark:text-emerald-100">

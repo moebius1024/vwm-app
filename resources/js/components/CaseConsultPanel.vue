@@ -1,6 +1,8 @@
 <script setup lang="ts">
+import { Link } from '@inertiajs/vue3';
 import { ref, watch } from 'vue';
 import axios from 'axios';
+import { start } from '@/routes/cases';
 
 type ToestandItem = {
   mutatie_id: number;
@@ -356,6 +358,15 @@ watch(() => props.transactieSoortId, () => {
 
 <template>
   <div class="space-y-4">
+    <div class="flex justify-end">
+      <Link
+        class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30"
+        :href="start()"
+      >
+        Terug naar start
+      </Link>
+    </div>
+
     <div v-if="dossiers && dossiers.length" class="space-y-4">
       <div v-for="dossier in dossiers" :key="dossier.id" class="rounded-xl border border-gray-200 p-5 dark:border-gray-700">
         <div class="flex flex-col gap-1">

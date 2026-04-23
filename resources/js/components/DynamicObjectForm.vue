@@ -46,18 +46,7 @@
             <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
               {{ veld.label }}
             </label>
-            <select
-              v-if="veld.type === 'make'"
-              v-model="object.formData[veld.property] as string"
-              class="h-11 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              required
-            >
-              <option disabled value="">Kies een merk</option>
-              <option v-for="make in makes" :key="make.id" :value="make.uri">
-                {{ make.name }}
-              </option>
-            </select>
-            <div v-else-if="veld.type === 'multi-uri'" class="space-y-2">
+            <div v-if="veld.type === 'multi-uri'" class="space-y-2">
               <div
                 v-for="(value, idx) in (object.formData[veld.property] as string[])"
                 :key="idx"
@@ -116,6 +105,8 @@
               v-model="object.formData[veld.property] as string"
               :type="veld.type"
               class="h-11 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+              @input="onFieldInput(object, veld)"
+              @blur="onFieldBlur(object, veld)"
               required
             >
           </div>
@@ -208,7 +199,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import axios from 'axios';
 
 interface Veld {
@@ -216,6 +207,14 @@ interface Veld {
   property: string;
   type: string;
   volgorde: number;
+  lookup?: {
+    endpoint?: string | null;
+    query_param?: string | null;
+    source_field?: string | null;
+    trigger?: string | null;
+    debounce_ms?: number | null;
+    min_length?: number | null;
+  } | null;
 }
 
 interface SjabloonSummary {
@@ -307,12 +306,127 @@ const allowedRoles = ref<AllowedRole[]>([]);
 const objects = ref<ObjectBlock[]>([]);
 const selectedSjabloonUri = ref<string | null>(null);
 const addToDossier = ref(true);
-const makes = ref<{ id: number; name: string; uri: string }[]>([]);
 const identifierMap = ref<Record<string, { describedClass: string; properties: string[] }>>({});
 let objectCounter = 1;
 let clientCounter = 1;
 type RoleSelection = { fromGoicId: string; toGoicId: string };
 const roleSelections = ref<Record<string, RoleSelection[]>>({});
+const kentekenLookupTimers = new Map<string, ReturnType<typeof setTimeout>>();
+const kentekenLastLookup = new Map<string, string>();
+const KENTEKEN_LOOKUP_DEBOUNCE_MS = 500;
+
+const setFieldValue = (object: ObjectBlock, property: string, value: unknown) => {
+  if (value === null || value === undefined) return;
+  const stringValue = String(value).trim();
+  if (stringValue === '') return;
+  if (!(property in object.formData)) return;
+  if (Array.isArray(object.formData[property])) return;
+  object.formData[property] = stringValue;
+};
+
+const applyLookupRecordToObject = (object: ObjectBlock, endpoint: string, record: Record<string, unknown>) => {
+  object.velden.forEach((veld) => {
+    const lookup = veld.lookup;
+    if (!lookup || lookup.endpoint !== endpoint) {
+      return;
+    }
+
+    const sourceField = typeof lookup.source_field === 'string' ? lookup.source_field : '';
+    if (sourceField === '') {
+      return;
+    }
+
+    if (Object.prototype.hasOwnProperty.call(record, sourceField)) {
+      setFieldValue(object, veld.property, record[sourceField]);
+    }
+  });
+};
+
+const executeLookup = async (object: ObjectBlock, endpoint: string, queryParam: string, rawValue: string) => {
+  if (!endpoint || !queryParam) return false;
+
+  try {
+    const response = await axios.get(endpoint, {
+      params: { [queryParam]: rawValue },
+    });
+
+    const found = response.data?.found === true;
+    const record = response.data?.record;
+    if (found && record && typeof record === 'object') {
+      applyLookupRecordToObject(object, endpoint, record as Record<string, unknown>);
+    }
+    return true;
+  } catch (error) {
+    console.warn('Lookup mislukt:', endpoint, queryParam, error);
+    return false;
+  }
+};
+
+const kentekenLookupKey = (object: ObjectBlock, veld: Veld) => `${object.clientId}:${veld.property}`;
+
+const triggerMetadataLookup = async (object: ObjectBlock, veld: Veld, triggerType: 'input' | 'blur') => {
+  const lookup = veld.lookup;
+  if (!lookup || !lookup.endpoint || !lookup.query_param) {
+    return;
+  }
+
+  const configuredTrigger = (lookup.trigger ?? 'blur').toLowerCase();
+  if (configuredTrigger !== triggerType) {
+    return;
+  }
+
+  const key = kentekenLookupKey(object, veld);
+  const existingTimer = kentekenLookupTimers.get(key);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    kentekenLookupTimers.delete(key);
+  }
+
+  const raw = object.formData[veld.property];
+  if (Array.isArray(raw) || typeof raw !== 'string') {
+    return;
+  }
+
+  const trimmed = raw.trim();
+  const minLength = typeof lookup.min_length === 'number' && lookup.min_length > 0 ? lookup.min_length : 1;
+  if (trimmed.length < minLength) {
+    kentekenLastLookup.delete(key);
+    return;
+  }
+
+  const performLookup = async () => {
+    if (kentekenLastLookup.get(key) === trimmed) {
+      return;
+    }
+    kentekenLastLookup.set(key, trimmed);
+    const ok = await executeLookup(object, lookup.endpoint, lookup.query_param, trimmed);
+    if (!ok) {
+      kentekenLastLookup.delete(key);
+    }
+  };
+
+  if (triggerType === 'blur') {
+    await performLookup();
+    return;
+  }
+
+  const debounceMs = typeof lookup.debounce_ms === 'number' && lookup.debounce_ms > 0
+    ? lookup.debounce_ms
+    : KENTEKEN_LOOKUP_DEBOUNCE_MS;
+  const timer = setTimeout(() => {
+    kentekenLookupTimers.delete(key);
+    void performLookup();
+  }, debounceMs);
+  kentekenLookupTimers.set(key, timer);
+};
+
+const onFieldInput = (object: ObjectBlock, veld: Veld) => {
+  void triggerMetadataLookup(object, veld, 'input');
+};
+
+const onFieldBlur = (object: ObjectBlock, veld: Veld) => {
+  void triggerMetadataLookup(object, veld, 'blur');
+};
 
 const loadIdentifiers = async () => {
   try {
@@ -355,7 +469,7 @@ const initObject = (sjabloon: SjabloonResponse): ObjectBlock => {
       dataTypes[veld.property] = 'uri';
     } else {
       formData[veld.property] = '';
-      dataTypes[veld.property] = veld.type === 'make' ? 'uri' : 'literal';
+      dataTypes[veld.property] = 'literal';
     }
   });
 
@@ -602,9 +716,6 @@ const loadForTransactie = async () => {
       ];
     }
 
-    const makeResponse = await axios.get('/api/merken');
-    makes.value = makeResponse.data.makes ?? [];
-
     const ordered = [...sjablonen.value].sort((a, b) => (a.volgorde ?? 1) - (b.volgorde ?? 1));
     const primary = ordered[0];
     if (primary) {
@@ -612,12 +723,17 @@ const loadForTransactie = async () => {
     } else {
       objects.value = [initObject(sjabloon)];
     }
+
   } catch (error) {
     console.error("Fout bij ophalen sjabloon:", error);
   }
 };
 
 onMounted(loadForTransactie);
+onUnmounted(() => {
+  kentekenLookupTimers.forEach((timer) => clearTimeout(timer));
+  kentekenLookupTimers.clear();
+});
 watch(() => props.transactieSoortId, () => {
   loadForTransactie();
 });

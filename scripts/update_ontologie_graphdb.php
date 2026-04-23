@@ -34,6 +34,7 @@ if ($shapesRaw === '') {
 
 $graph = app(GraphService::class);
 $graphIri = 'http://vwm.voorbeeld.nl/model/ontologie';
+$shapeGraphIri = 'http://rdf4j.org/schema/rdf4j#SHACLShapeGraph';
 
 $insert = "
     INSERT DATA {
@@ -45,9 +46,12 @@ $insert = "
 
 try {
     $graph->update("CLEAR GRAPH <{$graphIri}>");
+    $graph->update("CLEAR GRAPH <{$shapeGraphIri}>");
+    $graph->update(buildShapeGraphCleanup($shapeGraphIri));
     $graph->update($insert);
     $graph->update(buildShapesInsert($shapesRaw, $graphIri));
-    echo "Ontologie bijgewerkt in GraphDB.\n";
+    $graph->update(buildShapesInsert($shapesRaw, $shapeGraphIri));
+    echo "Ontologie + SHACL-shapes bijgewerkt in GraphDB.\n";
 } catch (Exception $e) {
     echo "GraphDB update fout: {$e->getMessage()}\n";
     exit(1);
@@ -81,4 +85,28 @@ function buildShapesInsert(string $shapesRaw, string $graphIri): string
     $bodyBlock = implode("\n", $body);
 
     return "{$prefixBlock}\nINSERT DATA { GRAPH <{$graphIri}> { {$bodyBlock} } }";
+}
+
+function buildShapeGraphCleanup(string $graphIri): string
+{
+    return "
+        PREFIX sh: <http://www.w3.org/ns/shacl#>
+        DELETE {
+            GRAPH <{$graphIri}> {
+                ?shape ?shapeP ?shapeO .
+                ?bn ?bnP ?bnO .
+            }
+        }
+        WHERE {
+            GRAPH <{$graphIri}> {
+                ?shape a sh:NodeShape ;
+                       ?shapeP ?shapeO .
+                OPTIONAL {
+                    ?shape ?shapeRef ?bn .
+                    FILTER(isBlank(?bn))
+                    ?bn ?bnP ?bnO .
+                }
+            }
+        }
+    ";
 }
