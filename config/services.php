@@ -37,8 +37,8 @@ return [
 
     // config/services.php
     'graphdb' => [
-    'url' => env('GRAPHDB_URL', 'http://localhost:7200'),
-    'repository' => env('GRAPHDB_REPO', 'VWM_01'), // Verander 'repository' naar 'REPO' als je dat liever hebt, maar match de env!
+        'url' => env('GRAPHDB_URL', 'http://localhost:7200'),
+        'repository' => env('GRAPHDB_REPO', 'VWM_01'), // Verander 'repository' naar 'REPO' als je dat liever hebt, maar match de env!
     ],
 
 ];

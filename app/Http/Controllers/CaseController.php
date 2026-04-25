@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Services\GraphService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -85,7 +86,7 @@ class CaseController extends Controller
                 }
             ";
 
-            app(\App\Services\GraphService::class)->update($dossierTriples);
+            app(GraphService::class)->update($dossierTriples);
 
             return $caseId;
         });
@@ -115,7 +116,7 @@ class CaseController extends Controller
                 ]);
         }
 
-        if (!$case && $caseId) {
+        if (! $case && $caseId) {
             return redirect('/start');
         }
 
@@ -196,7 +197,7 @@ class CaseController extends Controller
 
             $goicIds = $goics->pluck('id')->all();
             $mutaties = [];
-            if (!empty($goicIds)) {
+            if (! empty($goicIds)) {
                 $mutaties = DB::table('object_mutaties')
                     ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
                     ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
@@ -230,7 +231,7 @@ class CaseController extends Controller
                     continue;
                 }
                 $tbData = null;
-                if (!empty($row->tb_data)) {
+                if (! empty($row->tb_data)) {
                     $decoded = json_decode($row->tb_data, true);
                     $tbData = json_last_error() === JSON_ERROR_NONE ? $decoded : $row->tb_data;
                 }
@@ -294,7 +295,7 @@ class CaseController extends Controller
 
         $goicIds = $goics->pluck('id')->all();
         $mutaties = [];
-        if (!empty($goicIds)) {
+        if (! empty($goicIds)) {
             $mutaties = DB::table('object_mutaties')
                 ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
                 ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
@@ -328,7 +329,7 @@ class CaseController extends Controller
                 continue;
             }
             $tbData = null;
-            if (!empty($row->tb_data)) {
+            if (! empty($row->tb_data)) {
                 $decoded = json_decode($row->tb_data, true);
                 $tbData = json_last_error() === JSON_ERROR_NONE ? $decoded : $row->tb_data;
             }

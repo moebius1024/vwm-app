@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('object_mutaties', function (Blueprint $table) {
-            if (!Schema::hasColumn('object_mutaties', 'object_uri')) {
+            if (! Schema::hasColumn('object_mutaties', 'object_uri')) {
                 $table->string('object_uri')->nullable()->after('sjabloon_uri');
             }
         });

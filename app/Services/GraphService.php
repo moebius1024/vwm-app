@@ -8,6 +8,7 @@ class GraphService
 {
     // Deze declaraties halen de waarschuwingen in VSCode weg
     protected $baseUrl;
+
     protected $repository;
 
     public function __construct()
@@ -24,20 +25,38 @@ class GraphService
         $response = Http::withHeaders([
             'Accept' => 'application/sparql-results+json',
         ])->get($endpoint, [
-            'query' => $sparql
+            'query' => $sparql,
         ]);
 
         if ($response->failed()) {
-            throw new \Exception("GraphDB Error: " . $response->body());
+            throw new \Exception('GraphDB Error: '.$response->body());
         }
 
         return $this->simplifyResults($response->json());
     }
 
+    public function testConnection(): object
+    {
+        $rows = $this->query('SELECT (COUNT(*) AS ?tripleCount) WHERE { GRAPH ?g { ?s ?p ?o } }');
+        $count = (int) ($rows[0]['tripleCount'] ?? 0);
+
+        return new class($count)
+        {
+            public function __construct(private readonly int $count) {}
+
+            public function numRows(): int
+            {
+                return $this->count;
+            }
+        };
+    }
+
     protected function simplifyResults(array $data)
     {
         $results = [];
-        if (!isset($data['results']['bindings'])) return [];
+        if (! isset($data['results']['bindings'])) {
+            return [];
+        }
 
         foreach ($data['results']['bindings'] as $binding) {
             $row = [];
@@ -46,31 +65,32 @@ class GraphService
             }
             $results[] = $row;
         }
+
         return $results;
     }
 
     /**
- * Voert een SPARQL UPDATE (INSERT/DELETE) uit op GraphDB.
- */
+     * Voert een SPARQL UPDATE (INSERT/DELETE) uit op GraphDB.
+     */
     public function update(string $sparql)
     {
-    // Let op: Bij updates gebruiken we het /statements endpoint
-    $endpoint = "{$this->baseUrl}/repositories/{$this->repository}/statements";
+        // Let op: Bij updates gebruiken we het /statements endpoint
+        $endpoint = "{$this->baseUrl}/repositories/{$this->repository}/statements";
 
-    if (!preg_match('//u', $sparql)) {
-        $sparql = iconv('UTF-8', 'UTF-8//IGNORE', $sparql);
-    }
+        if (! preg_match('//u', $sparql)) {
+            $sparql = iconv('UTF-8', 'UTF-8//IGNORE', $sparql);
+        }
 
-    $response = Http::withHeaders([
-        'Content-Type' => 'application/sparql-update',
-    ])->withBody($sparql, 'application/sparql-update')
-      ->post($endpoint);
+        $response = Http::withHeaders([
+            'Content-Type' => 'application/sparql-update',
+        ])->withBody($sparql, 'application/sparql-update')
+            ->post($endpoint);
 
-    if ($response->failed()) {
-        throw new \Exception("GraphDB Update Fout: " . $response->body());
-    }
+        if ($response->failed()) {
+            throw new \Exception('GraphDB Update Fout: '.$response->body());
+        }
 
-    return true;
+        return true;
     }
 
     /**
@@ -88,11 +108,11 @@ class GraphService
         ])->post($endpoint);
 
         if ($response->failed()) {
-            throw new \Exception("GraphDB SHACL Validate Fout: " . $response->body());
+            throw new \Exception('GraphDB SHACL Validate Fout: '.$response->body());
         }
 
         $report = $response->body();
-        $conforms = !str_contains($report, 'sh:conforms false') && !str_contains($report, 'conforms false');
+        $conforms = ! str_contains($report, 'sh:conforms false') && ! str_contains($report, 'conforms false');
 
         return [
             'conforms' => $conforms,

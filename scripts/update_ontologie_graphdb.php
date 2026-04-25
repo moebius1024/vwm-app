@@ -1,15 +1,15 @@
 <?php
 
-use Illuminate\Contracts\Console\Kernel;
 use App\Services\GraphService;
+use Illuminate\Contracts\Console\Kernel;
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__.'/../vendor/autoload.php';
 
-$app = require __DIR__ . '/../bootstrap/app.php';
+$app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
-$ttlPath = __DIR__ . '/../Docs/statements.ttl';
-if (!file_exists($ttlPath)) {
+$ttlPath = __DIR__.'/../Docs/statements.ttl';
+if (! file_exists($ttlPath)) {
     echo "Ontology file not found: {$ttlPath}\n";
     exit(1);
 }
@@ -20,8 +20,8 @@ if ($ttl === '') {
     exit(1);
 }
 
-$shapesPath = __DIR__ . '/../Docs/shapes.ttl';
-if (!file_exists($shapesPath)) {
+$shapesPath = __DIR__.'/../Docs/shapes.ttl';
+if (! file_exists($shapesPath)) {
     echo "Shapes file not found: {$shapesPath}\n";
     exit(1);
 }
@@ -76,12 +76,13 @@ function buildShapesInsert(string $shapesRaw, string $graphIri): string
                 $iri = trim($parts[2], '<>'); // remove <> if present
                 $prefixes[] = "PREFIX {$prefix}: <{$iri}>";
             }
+
             continue;
         }
         $body[] = $line;
     }
 
-    $prefixBlock = $prefixes ? implode("\n", array_unique($prefixes)) . "\n" : '';
+    $prefixBlock = $prefixes ? implode("\n", array_unique($prefixes))."\n" : '';
     $bodyBlock = implode("\n", $body);
 
     return "{$prefixBlock}\nINSERT DATA { GRAPH <{$graphIri}> { {$bodyBlock} } }";

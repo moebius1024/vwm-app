@@ -9,7 +9,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasColumn('transactie_soort_sjabloon', 'type')) {
+        if (! Schema::hasColumn('transactie_soort_sjabloon', 'type')) {
             Schema::table('transactie_soort_sjabloon', function (Blueprint $table) {
                 $table->string('type')->default('sjabloon')->after('sjabloon_uri');
             });
@@ -27,7 +27,7 @@ return new class extends Migration
                     ->where('sjabloon_uri', $row->rol_tb_class)
                     ->where('type', 'rol')
                     ->exists();
-                if (!$exists) {
+                if (! $exists) {
                     DB::table('transactie_soort_sjabloon')->insert([
                         'transactie_soort_id' => $row->transactie_soort_id,
                         'sjabloon_uri' => $row->rol_tb_class,
@@ -45,7 +45,7 @@ return new class extends Migration
 
     public function down(): void
     {
-        if (!Schema::hasTable('transactie_soort_rol_tb')) {
+        if (! Schema::hasTable('transactie_soort_rol_tb')) {
             Schema::create('transactie_soort_rol_tb', function (Blueprint $table) {
                 $table->id();
                 $table->foreignId('transactie_soort_id')->constrained('transactie_soorten')->onDelete('cascade');
@@ -66,7 +66,7 @@ return new class extends Migration
                 ->where('transactie_soort_id', $row->transactie_soort_id)
                 ->where('rol_tb_class', $row->sjabloon_uri)
                 ->exists();
-            if (!$exists) {
+            if (! $exists) {
                 DB::table('transactie_soort_rol_tb')->insert([
                     'transactie_soort_id' => $row->transactie_soort_id,
                     'rol_tb_class' => $row->sjabloon_uri,

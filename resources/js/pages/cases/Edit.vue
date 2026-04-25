@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { computed, ref } from 'vue';
-import DynamicObjectForm from '@/components/DynamicObjectForm.vue';
+import { ref } from 'vue';
 import CaseConsultPanel from '@/components/CaseConsultPanel.vue';
+import DynamicObjectForm from '@/components/DynamicObjectForm.vue';
 import { start } from '@/routes/cases';
 
 type Props = {
@@ -58,7 +58,6 @@ defineOptions({
 
 const props = defineProps<Props>();
 const selectedTransactieId = ref<number | null>(props.transactieSoorten?.[0]?.id ?? null);
-const hasTransactie = computed(() => (props.transactieSoorten?.length ?? 0) > 0);
 
 const refreshDossiers = () => {
   router.reload({ only: ['dossiers'] });

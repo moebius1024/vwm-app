@@ -13,7 +13,7 @@ import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 
 defineOptions({
-    layout: null,
+    layout: (page: unknown) => page,
 });
 
 defineProps<{

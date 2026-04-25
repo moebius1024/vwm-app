@@ -1,13 +1,13 @@
 <?php
 
-use Illuminate\Contracts\Console\Kernel;
-use Illuminate\Support\Str;
-use Illuminate\Support\Facades\DB;
 use App\Services\GraphService;
+use Illuminate\Contracts\Console\Kernel;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
-require __DIR__ . '/../vendor/autoload.php';
+require __DIR__.'/../vendor/autoload.php';
 
-$app = require __DIR__ . '/../bootstrap/app.php';
+$app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
 $graph = app(GraphService::class);

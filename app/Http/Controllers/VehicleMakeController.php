@@ -42,7 +42,7 @@ class VehicleMakeController extends Controller
             }
 
             $rows = $response->json();
-            $first = is_array($rows) && !empty($rows) && is_array($rows[0]) ? $rows[0] : null;
+            $first = is_array($rows) && ! empty($rows) && is_array($rows[0]) ? $rows[0] : null;
 
             return [
                 'ok' => true,
@@ -59,7 +59,7 @@ class VehicleMakeController extends Controller
 
         return response()->json([
             'kenteken' => $normalized,
-            'found' => !empty($payload['record']),
+            'found' => ! empty($payload['record']),
             'record' => $payload['record'] ?? null,
         ]);
     }

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ref, watch } from 'vue';
 import axios from 'axios';
+import { ref, watch } from 'vue';
 import { start } from '@/routes/cases';
 
 type ToestandItem = {
@@ -42,12 +42,15 @@ const goicDisplayMap = ref<Record<string, string>>({});
 const identifierMap = ref<Record<string, { describedClass: string; properties: string[] }>>({});
 const classOrder = ref<Record<string, number>>({});
 
-const isUri = (value: unknown) =>
+const isUri = (value: unknown): value is string =>
   typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'));
 
 const labelFor = (value: unknown) => {
-  if (!isUri(value)) return null;
-  return labelMap.value[value as string] ?? null;
+  if (!isUri(value)) {
+return null;
+}
+
+  return labelMap.value[value] ?? null;
 };
 
 const keyLabelFor = (key: string) => {
@@ -56,6 +59,7 @@ const keyLabelFor = (key: string) => {
     van: 'Van',
     naar: 'Naar',
   };
+
   return map[key] ?? null;
 };
 
@@ -65,11 +69,15 @@ const fieldLabelFor = (key: string) => {
 
 const shortId = (uri: string) => {
   const trimmed = uri.endsWith('/') ? uri.slice(0, -1) : uri;
+
   if (trimmed.includes('#')) {
     const parts = trimmed.split('#');
+
     return parts[parts.length - 1] ?? uri;
   }
+
   const parts = trimmed.split('/');
+
   return parts[parts.length - 1] ?? uri;
 };
 
@@ -77,27 +85,36 @@ const normalizeUri = (uri: string) => (uri.endsWith('/') ? uri.slice(0, -1) : ur
 
 const extractUrisFromValue = (value: unknown): string[] => {
   const uris: string[] = [];
+
   if (isUri(value)) {
     uris.push(normalizeUri(value as string));
+
     return uris;
   }
+
   if (Array.isArray(value)) {
     value.forEach((item) => {
       uris.push(...extractUrisFromValue(item));
     });
+
     return uris;
   }
+
   if (value && typeof value === 'object') {
     const record = value as Record<string, unknown>;
     const directKeys = ['@id', 'id', 'rdf_uri', 'uri'];
     directKeys.forEach((key) => {
       const raw = record[key];
-      if (isUri(raw)) uris.push(normalizeUri(raw as string));
+
+      if (isUri(raw)) {
+uris.push(normalizeUri(raw as string));
+}
     });
     Object.values(record).forEach((item) => {
       uris.push(...extractUrisFromValue(item));
     });
   }
+
   return uris;
 };
 
@@ -112,6 +129,7 @@ const buildGoicDisplayMap = (dossiers: DossierItem[]) => {
 
       if (!lastTb || !lastTb.tb_class) {
         map[goic.rdf_uri] = 'GOIC';
+
         return;
       }
 
@@ -122,13 +140,19 @@ const buildGoicDisplayMap = (dossiers: DossierItem[]) => {
         : (labelMap.value[lastTb.tb_class] ?? shortId(lastTb.tb_class));
 
       let identifierValue = '';
+
       if (idConfig && lastTb.tb_data && typeof lastTb.tb_data === 'object' && !Array.isArray(lastTb.tb_data)) {
         const values: string[] = [];
         idConfig.properties.forEach((prop) => {
           const raw = (lastTb.tb_data as Record<string, unknown>)[prop];
-          if (raw === null || raw === undefined || raw === '') return;
+
+          if (raw === null || raw === undefined || raw === '') {
+return;
+}
+
           values.push(formatValue(raw));
         });
+
         if (values.length) {
           identifierValue = values.join(', ');
         }
@@ -145,10 +169,18 @@ const goicClassLabel = (goic: GoicItem) => {
   const preferredTb = reversed.find((item) => !!item.tb_class && !!identifierMap.value[item.tb_class]);
   const fallbackTb = reversed.find((item) => !!item.tb_class);
   const tb = preferredTb ?? fallbackTb ?? null;
-  if (!tb?.tb_class) return '';
+
+  if (!tb?.tb_class) {
+return '';
+}
+
   const idConfig = identifierMap.value[tb.tb_class];
   const describedClass = idConfig?.describedClass ?? null;
-  if (!describedClass) return '';
+
+  if (!describedClass) {
+return '';
+}
+
   return labelMap.value[describedClass] ?? shortId(describedClass);
 };
 
@@ -157,26 +189,47 @@ const goicClassUri = (goic: GoicItem) => {
   const preferredTb = reversed.find((item) => !!item.tb_class && !!identifierMap.value[item.tb_class]);
   const fallbackTb = reversed.find((item) => !!item.tb_class);
   const tb = preferredTb ?? fallbackTb ?? null;
-  if (!tb?.tb_class) return null;
+
+  if (!tb?.tb_class) {
+return null;
+}
+
   const idConfig = identifierMap.value[tb.tb_class];
+
   return idConfig?.describedClass ?? null;
 };
 
 const formatValue = (value: unknown) => {
-  if (value === null || value === undefined) return '';
+  if (value === null || value === undefined) {
+return '';
+}
+
   if (Array.isArray(value)) {
     return value
       .map((item) => labelFor(item) ?? goicDisplayMap.value[item as string] ?? (isUri(item) ? shortId(item) : 'Onbekend'))
       .join(', ');
   }
+
   if (isUri(value)) {
     const uri = value as string;
-    if (goicDisplayMap.value[uri]) return goicDisplayMap.value[uri];
+
+    if (goicDisplayMap.value[uri]) {
+return goicDisplayMap.value[uri];
+}
+
     const label = labelFor(uri);
-    if (label) return label;
+
+    if (label) {
+return label;
+}
+
     return shortId(uri);
   }
-  if (typeof value === 'object') return JSON.stringify(value, null, 2);
+
+  if (typeof value === 'object') {
+return JSON.stringify(value, null, 2);
+}
+
   return String(value);
 };
 
@@ -189,6 +242,7 @@ const isSelfReferenceValue = (value: unknown, goic: GoicItem, key: string) => {
 
   const uris = extractUrisFromValue(value);
   const goicUri = normalizeUri(goic.rdf_uri);
+
   if (uris.length > 0 && uris.every((uri) => uri === goicUri)) {
     return true;
   }
@@ -197,6 +251,7 @@ const isSelfReferenceValue = (value: unknown, goic: GoicItem, key: string) => {
     const normalized = formatted.toLowerCase();
     const labelMatch = subjectLabel.toLowerCase();
     const shortMatch = subjectShort ? subjectShort.toLowerCase() : '';
+
     if (
       normalized === labelMatch ||
       normalized.startsWith(`${labelMatch}:`) ||
@@ -207,16 +262,24 @@ const isSelfReferenceValue = (value: unknown, goic: GoicItem, key: string) => {
   }
 
   const currentDisplay = goicDisplayMap.value[goic.rdf_uri];
-  if (!currentDisplay) return false;
+
+  if (!currentDisplay) {
+return false;
+}
 
   if (isUri(value)) {
     const display = goicDisplayMap.value[value as string];
-    if (display && display === currentDisplay) return true;
+
+    if (display && display === currentDisplay) {
+return true;
+}
   }
+
   if (Array.isArray(value)) {
     const displays = value
       .map((item) => (isUri(item) ? goicDisplayMap.value[item as string] : null))
       .filter((item): item is string => !!item);
+
     if (displays.length > 0 && displays.every((item) => item === currentDisplay)) {
       return true;
     }
@@ -228,14 +291,19 @@ const isSelfReferenceValue = (value: unknown, goic: GoicItem, key: string) => {
 const loadSjabloonOrder = async () => {
   if (!props.transactieSoortId) {
     classOrder.value = {};
+
     return;
   }
+
   try {
     const response = await axios.get(`/api/sjabloon/${props.transactieSoortId}`);
     const allowed = response.data.allowed_sjablonen ?? [];
     const map: Record<string, number> = {};
     allowed.forEach((item: { target_class?: string | null; volgorde?: number }, index: number) => {
-      if (!item.target_class) return;
+      if (!item.target_class) {
+return;
+}
+
       map[item.target_class] = item.volgorde ?? index + 1;
     });
     classOrder.value = map;
@@ -247,9 +315,11 @@ const loadSjabloonOrder = async () => {
 
 const getOrderValue = (goic: GoicItem) => {
   const classUri = goicClassUri(goic);
+
   if (classUri && classOrder.value[classUri] !== undefined) {
     return classOrder.value[classUri];
   }
+
   return 9999;
 };
 
@@ -257,7 +327,11 @@ const orderedGoics = (dossier: DossierItem) => {
   return [...dossier.goics].sort((a, b) => {
     const orderA = getOrderValue(a);
     const orderB = getOrderValue(b);
-    if (orderA !== orderB) return orderA - orderB;
+
+    if (orderA !== orderB) {
+return orderA - orderB;
+}
+
     return a.id - b.id;
   });
 };
@@ -270,6 +344,7 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
   if (!tb.tb_data || typeof tb.tb_data !== 'object' || Array.isArray(tb.tb_data)) {
     return [];
   }
+
   return Object.entries(tb.tb_data as Record<string, unknown>);
 };
 
@@ -278,16 +353,33 @@ const collectUris = (dossiers: DossierItem[]) => {
   dossiers.forEach((dossier) => {
     dossier.goics.forEach((goic) => {
       goic.toestanden.forEach((tb) => {
-        if (tb.tb_class) set.add(tb.tb_class);
-        if (tb.tb_rdf_uri) set.add(tb.tb_rdf_uri);
-        if (tb.sjabloon_uri) set.add(tb.sjabloon_uri);
+        if (tb.tb_class) {
+set.add(tb.tb_class);
+}
+
+        if (tb.tb_rdf_uri) {
+set.add(tb.tb_rdf_uri);
+}
+
+        if (tb.sjabloon_uri) {
+set.add(tb.sjabloon_uri);
+}
+
         if (tb.tb_data && typeof tb.tb_data === 'object' && !Array.isArray(tb.tb_data)) {
           Object.entries(tb.tb_data).forEach(([key, value]) => {
-            if (isUri(key)) set.add(key);
-            if (isUri(value)) set.add(value);
+            if (isUri(key)) {
+set.add(key);
+}
+
+            if (isUri(value)) {
+set.add(value);
+}
+
             if (Array.isArray(value)) {
               value.forEach((item) => {
-                if (isUri(item)) set.add(item);
+                if (isUri(item)) {
+set.add(item);
+}
               });
             }
           });
@@ -295,6 +387,7 @@ const collectUris = (dossiers: DossierItem[]) => {
       });
     });
   });
+
   return Array.from(set);
 };
 
@@ -302,24 +395,32 @@ const loadLabels = async () => {
   if (typeof window === 'undefined') {
     return;
   }
+
   if (!props.dossiers || props.dossiers.length === 0) {
     labelMap.value = {};
     identifierMap.value = {};
+
     return;
   }
+
   const uris = collectUris(props.dossiers);
+
   if (!uris.length) {
     labelMap.value = {};
     identifierMap.value = {};
+
     return;
   }
+
   try {
     let labelsResponse = await axios.post('/api/labels', { uris });
     let labels = labelsResponse.data.labels ?? {};
+
     if (!Object.keys(labels).length) {
       labelsResponse = await axios.get('/api/labels');
       labels = labelsResponse.data.labels ?? {};
     }
+
     labelMap.value = labels;
   } catch (error) {
     console.error('Fout bij ophalen labels:', error);

@@ -25,7 +25,10 @@ const form = useForm({
 });
 
 const submit = () => {
-    if (!form.case_soort_id) return;
+    if (!form.case_soort_id) {
+return;
+}
+
     form.post('/cases');
 };
 </script>

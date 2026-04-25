@@ -57,7 +57,7 @@
                   type="url"
                   placeholder="Plak de URI van het object"
                   class="h-11 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  required
+                  :required="veld.required"
                 >
                 <button
                   v-if="(object.formData[veld.property] as string[]).length > 1"
@@ -81,7 +81,7 @@
                 type="file"
                 class="h-11 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 @change="onFileSelected($event, object, veld)"
-                required
+                :required="veld.required"
               >
               <p v-if="object.fileUploads[veld.property]?.uploading" class="text-xs text-amber-700 dark:text-amber-200">
                 Uploaden...
@@ -98,7 +98,7 @@
               v-model="object.formData[veld.property] as string"
               rows="4"
               class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              required
+              :required="veld.required"
             ></textarea>
             <input
               v-else
@@ -107,7 +107,7 @@
               class="h-11 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
               @input="onFieldInput(object, veld)"
               @blur="onFieldBlur(object, veld)"
-              required
+              :required="veld.required"
             >
           </div>
         </div>
@@ -171,7 +171,7 @@
         <button
           type="button"
           class="inline-flex items-center rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-          @click="addObject"
+          @click="() => addObject()"
         >
           Extra object toevoegen
         </button>
@@ -199,14 +199,15 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 import axios from 'axios';
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
 
 interface Veld {
   label: string;
   property: string;
   type: string;
   volgorde: number;
+  required: boolean;
   lookup?: {
     endpoint?: string | null;
     query_param?: string | null;
@@ -310,28 +311,44 @@ const identifierMap = ref<Record<string, { describedClass: string; properties: s
 let objectCounter = 1;
 let clientCounter = 1;
 type RoleSelection = { fromGoicId: string; toGoicId: string };
+type RolePayloadItem = { roleTbClass: string; fromGoicId: number; toGoicId: number };
 const roleSelections = ref<Record<string, RoleSelection[]>>({});
 const kentekenLookupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const kentekenLastLookup = new Map<string, string>();
 const KENTEKEN_LOOKUP_DEBOUNCE_MS = 500;
 
 const setFieldValue = (object: ObjectBlock, property: string, value: unknown) => {
-  if (value === null || value === undefined) return;
+  if (value === null || value === undefined) {
+return;
+}
+
   const stringValue = String(value).trim();
-  if (stringValue === '') return;
-  if (!(property in object.formData)) return;
-  if (Array.isArray(object.formData[property])) return;
+
+  if (stringValue === '') {
+return;
+}
+
+  if (!(property in object.formData)) {
+return;
+}
+
+  if (Array.isArray(object.formData[property])) {
+return;
+}
+
   object.formData[property] = stringValue;
 };
 
 const applyLookupRecordToObject = (object: ObjectBlock, endpoint: string, record: Record<string, unknown>) => {
   object.velden.forEach((veld) => {
     const lookup = veld.lookup;
+
     if (!lookup || lookup.endpoint !== endpoint) {
       return;
     }
 
     const sourceField = typeof lookup.source_field === 'string' ? lookup.source_field : '';
+
     if (sourceField === '') {
       return;
     }
@@ -343,7 +360,9 @@ const applyLookupRecordToObject = (object: ObjectBlock, endpoint: string, record
 };
 
 const executeLookup = async (object: ObjectBlock, endpoint: string, queryParam: string, rawValue: string) => {
-  if (!endpoint || !queryParam) return false;
+  if (!endpoint || !queryParam) {
+return false;
+}
 
   try {
     const response = await axios.get(endpoint, {
@@ -352,12 +371,15 @@ const executeLookup = async (object: ObjectBlock, endpoint: string, queryParam: 
 
     const found = response.data?.found === true;
     const record = response.data?.record;
+
     if (found && record && typeof record === 'object') {
       applyLookupRecordToObject(object, endpoint, record as Record<string, unknown>);
     }
+
     return true;
   } catch (error) {
     console.warn('Lookup mislukt:', endpoint, queryParam, error);
+
     return false;
   }
 };
@@ -366,31 +388,40 @@ const kentekenLookupKey = (object: ObjectBlock, veld: Veld) => `${object.clientI
 
 const triggerMetadataLookup = async (object: ObjectBlock, veld: Veld, triggerType: 'input' | 'blur') => {
   const lookup = veld.lookup;
+
   if (!lookup || !lookup.endpoint || !lookup.query_param) {
     return;
   }
 
+  const endpoint = lookup.endpoint;
+  const queryParam = lookup.query_param;
+
   const configuredTrigger = (lookup.trigger ?? 'blur').toLowerCase();
+
   if (configuredTrigger !== triggerType) {
     return;
   }
 
   const key = kentekenLookupKey(object, veld);
   const existingTimer = kentekenLookupTimers.get(key);
+
   if (existingTimer) {
     clearTimeout(existingTimer);
     kentekenLookupTimers.delete(key);
   }
 
   const raw = object.formData[veld.property];
+
   if (Array.isArray(raw) || typeof raw !== 'string') {
     return;
   }
 
   const trimmed = raw.trim();
   const minLength = typeof lookup.min_length === 'number' && lookup.min_length > 0 ? lookup.min_length : 1;
+
   if (trimmed.length < minLength) {
     kentekenLastLookup.delete(key);
+
     return;
   }
 
@@ -398,8 +429,10 @@ const triggerMetadataLookup = async (object: ObjectBlock, veld: Veld, triggerTyp
     if (kentekenLastLookup.get(key) === trimmed) {
       return;
     }
+
     kentekenLastLookup.set(key, trimmed);
-    const ok = await executeLookup(object, lookup.endpoint, lookup.query_param, trimmed);
+    const ok = await executeLookup(object, endpoint, queryParam, trimmed);
+
     if (!ok) {
       kentekenLastLookup.delete(key);
     }
@@ -407,6 +440,7 @@ const triggerMetadataLookup = async (object: ObjectBlock, veld: Veld, triggerTyp
 
   if (triggerType === 'blur') {
     await performLookup();
+
     return;
   }
 
@@ -434,7 +468,10 @@ const loadIdentifiers = async () => {
     const rows = (response.data.identifiers ?? []) as IdentifierItem[];
     const map: Record<string, { describedClass: string; properties: string[] }> = {};
     rows.forEach((row) => {
-      if (!row.tb_class || !row.described_class) return;
+      if (!row.tb_class || !row.described_class) {
+return;
+}
+
       map[row.tb_class] = {
         describedClass: row.described_class,
         properties: row.properties ?? [],
@@ -489,9 +526,11 @@ const initObject = (sjabloon: SjabloonResponse): ObjectBlock => {
 const loadSjabloonByUri = async (uri: string): Promise<SjabloonResponse | null> => {
   try {
     const response = await axios.get('/api/sjabloon/uri', { params: { uri } });
+
     return response.data as SjabloonResponse;
   } catch (error) {
     console.error('Fout bij ophalen sjabloon via uri:', error);
+
     return null;
   }
 };
@@ -500,18 +539,30 @@ const addObject = async (preferredUri?: string) => {
   const fallback = objects.value[0];
   const targetUri = preferredUri ?? selectedSjabloonUri.value ?? sjablonen.value[0]?.sjabloon_uri ?? fallback?.sjabloonUri;
 
-  if (!targetUri) return;
+  if (!targetUri) {
+return;
+}
 
   const sjabloon = await loadSjabloonByUri(targetUri);
-  if (!sjabloon) return;
+
+  if (!sjabloon) {
+return;
+}
 
   objects.value.push(initObject(sjabloon));
 };
 
 const setPrimaryObjectByUri = async (uri: string | null) => {
-  if (!uri) return;
+  if (!uri) {
+return;
+}
+
   const sjabloon = await loadSjabloonByUri(uri);
-  if (!sjabloon) return;
+
+  if (!sjabloon) {
+return;
+}
+
   selectedSjabloonUri.value = uri;
   objects.value = [initObject(sjabloon)];
   roleSelections.value = {};
@@ -523,6 +574,7 @@ const removeObject = (index: number) => {
 
 const addMultiUriValue = (object: ObjectBlock, property: string) => {
   const current = object.formData[property];
+
   if (Array.isArray(current)) {
     current.push('');
   } else {
@@ -532,8 +584,13 @@ const addMultiUriValue = (object: ObjectBlock, property: string) => {
 
 const removeMultiUriValue = (object: ObjectBlock, property: string, index: number) => {
   const current = object.formData[property];
-  if (!Array.isArray(current)) return;
+
+  if (!Array.isArray(current)) {
+return;
+}
+
   current.splice(index, 1);
+
   if (current.length === 0) {
     current.push('');
   }
@@ -564,6 +621,7 @@ const uploadFile = async (object: ObjectBlock, veld: Veld, file: File) => {
     });
 
     const bestandUri = response.data?.bestand_uri as string | undefined;
+
     if (!bestandUri) {
       throw new Error('Geen bestand URI ontvangen');
     }
@@ -583,41 +641,60 @@ const uploadFile = async (object: ObjectBlock, veld: Veld, file: File) => {
 const onFileSelected = (event: Event, object: ObjectBlock, veld: Veld) => {
   const input = event.target as HTMLInputElement;
   const file = input.files?.[0];
-  if (!file) return;
+
+  if (!file) {
+return;
+}
+
   uploadFile(object, veld, file);
 };
 
 const savedGoics = computed<GoicItem[]>(() => {
   const dossiers = props.dossiers ?? [];
+
   return dossiers.flatMap((dossier) => dossier.goics ?? []);
 });
 
 const shortId = (uri: string) => {
   const trimmed = uri.endsWith('/') ? uri.slice(0, -1) : uri;
+
   if (trimmed.includes('#')) {
     const parts = trimmed.split('#');
+
     return parts[parts.length - 1] ?? uri;
   }
+
   const parts = trimmed.split('/');
+
   return parts[parts.length - 1] ?? uri;
 };
 
 const getLatestTb = (goic: GoicItem) => {
   const reversed = [...(goic.toestanden ?? [])].reverse();
   const preferred = reversed.find((tb) => !!tb.tb_class && !!identifierMap.value[tb.tb_class]);
+
   return preferred ?? reversed.find((tb) => !!tb.tb_class) ?? null;
 };
 
 const getGoicClassUri = (goic: GoicItem) => {
   const tb = getLatestTb(goic);
-  if (!tb?.tb_class) return null;
+
+  if (!tb?.tb_class) {
+return null;
+}
+
   const config = identifierMap.value[tb.tb_class];
+
   return config?.describedClass ?? null;
 };
 
 const getGoicDisplayName = (goic: GoicItem) => {
   const tb = getLatestTb(goic);
-  if (!tb?.tb_class) return `GOIC ${goic.id}`;
+
+  if (!tb?.tb_class) {
+return `GOIC ${goic.id}`;
+}
+
   const config = identifierMap.value[tb.tb_class];
   const classUri = config?.describedClass ?? tb.tb_class;
   const classLabel = shortId(classUri);
@@ -626,9 +703,14 @@ const getGoicDisplayName = (goic: GoicItem) => {
     const values: string[] = [];
     config.properties.forEach((prop) => {
       const raw = (tb.tb_data as Record<string, unknown>)[prop];
-      if (raw === null || raw === undefined || raw === '') return;
+
+      if (raw === null || raw === undefined || raw === '') {
+return;
+}
+
       values.push(String(raw));
     });
+
     if (values.length) {
       return `${classLabel}: ${values.join(', ')}`;
     }
@@ -641,17 +723,26 @@ const goicsByClass = computed<Record<string, GoicItem[]>>(() => {
   const map: Record<string, GoicItem[]> = {};
   savedGoics.value.forEach((goic) => {
     const classUri = getGoicClassUri(goic);
-    if (!classUri) return;
+
+    if (!classUri) {
+return;
+}
+
     if (!map[classUri]) {
       map[classUri] = [];
     }
+
     map[classUri].push(goic);
   });
+
   return map;
 });
 
 const getGoicsForClass = (classUri: string | null) => {
-  if (!classUri) return [];
+  if (!classUri) {
+return [];
+}
+
   return goicsByClass.value[classUri] ?? [];
 };
 
@@ -662,10 +753,14 @@ const roleGroups = computed(() => {
 const getRoleSelections = (tbClass: string) => roleSelections.value[tbClass] ?? [];
 
 const addRoleSelection = (role: AllowedRole) => {
-  if (!role.tb_class) return;
+  if (!role.tb_class) {
+return;
+}
+
   if (!roleSelections.value[role.tb_class]) {
     roleSelections.value[role.tb_class] = [];
   }
+
   const toOptions = getGoicsForClass(role.naar_class ?? null);
   roleSelections.value[role.tb_class].push({
     fromGoicId: '',
@@ -674,19 +769,24 @@ const addRoleSelection = (role: AllowedRole) => {
 };
 
 const removeRoleSelection = (tbClass: string, index: number) => {
-  if (!roleSelections.value[tbClass]) return;
+  if (!roleSelections.value[tbClass]) {
+return;
+}
+
   roleSelections.value[tbClass].splice(index, 1);
 };
 
 const canAddRole = (role: AllowedRole) => {
   const fromOptions = getGoicsForClass(role.van_class ?? null);
   const toOptions = getGoicsForClass(role.naar_class ?? null);
+
   return fromOptions.length > 0 && toOptions.length > 0;
 };
 
 const roleHint = (role: AllowedRole) => {
   const fromLabel = role.van_class ? shortId(role.van_class) : 'object';
   const toLabel = role.naar_class ? shortId(role.naar_class) : 'object';
+
   return `Registreer eerst een ${fromLabel} en ${toLabel} in het dossier, daarna kun je hier een rol kiezen.`;
 };
 
@@ -718,6 +818,7 @@ const loadForTransactie = async () => {
 
     const ordered = [...sjablonen.value].sort((a, b) => (a.volgorde ?? 1) - (b.volgorde ?? 1));
     const primary = ordered[0];
+
     if (primary) {
       await setPrimaryObjectByUri(primary.sjabloon_uri);
     } else {
@@ -742,24 +843,31 @@ const submitForm = async () => {
   if (!addToDossier.value) {
     return;
   }
+
   const hasPendingUploads = objects.value.some((object) =>
     Object.values(object.fileUploads).some((state) => state.uploading)
   );
+
   if (hasPendingUploads) {
     alert('Wacht tot alle uploads klaar zijn.');
+
     return;
   }
 
   const hasMissingUploads = objects.value.some((object) =>
-    Object.keys(object.fileUploads).some((property) => !object.formData[property])
+    Object.keys(object.fileUploads).some((property) =>
+      object.velden.some((veld) => veld.property === property && veld.required) && !object.formData[property]
+    )
   );
+
   if (hasMissingUploads) {
     alert('Upload een bestand voor alle verplichte foto-velden.');
+
     return;
   }
 
   try {
-    const roleItems = [];
+    const roleItems: RolePayloadItem[] = [];
     roleGroups.value.forEach((role) => {
       const selections = getRoleSelections(role.tb_class);
       const toOptions = getGoicsForClass(role.naar_class ?? null);
@@ -768,8 +876,15 @@ const submitForm = async () => {
       selections.forEach((selection) => {
         const fromId = selection.fromGoicId;
         const toId = selection.toGoicId || defaultTo;
-        if (!fromId) return;
-        if (!toId) return;
+
+        if (!fromId) {
+return;
+}
+
+        if (!toId) {
+return;
+}
+
         roleItems.push({
           roleTbClass: role.tb_class,
           fromGoicId: Number(fromId),
@@ -804,9 +919,11 @@ const submitForm = async () => {
     const apiError = axiosError.response?.data?.error;
 
     console.error('Fout bij opslaan:', error);
+
     if (axiosError.response?.data?.report) {
       console.error('SHACL report:', axiosError.response.data.report);
     }
+
     alert(apiError ? `Opslaan mislukt: ${apiError}` : 'Opslaan mislukt. Zie console voor details.');
   }
 };

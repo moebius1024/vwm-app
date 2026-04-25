@@ -6,13 +6,11 @@ use Illuminate\Support\Facades\DB;
 
 class SjabloonMetadataService
 {
-    public function __construct(private readonly GraphService $graphService)
-    {
-    }
+    public function __construct(private readonly GraphService $graphService) {}
 
     public function listSjablonen(): array
     {
-        $query = "
+        $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
@@ -25,9 +23,10 @@ class SjabloonMetadataService
                 }
             }
             ORDER BY ?label
-        ";
+        ';
 
         $rows = $this->graphService->query($query);
+
         return array_map(function ($row) {
             return [
                 'sjabloon_uri' => $row['sjabloon'],
@@ -39,7 +38,7 @@ class SjabloonMetadataService
 
     public function listRolTypes(): array
     {
-        $query = "
+        $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 
@@ -52,9 +51,10 @@ class SjabloonMetadataService
                 }
             }
             ORDER BY ?roleKey
-        ";
+        ';
 
         $rows = $this->graphService->query($query);
+
         return array_map(function ($row) {
             return [
                 'role_key' => $row['roleKey'],
@@ -68,7 +68,7 @@ class SjabloonMetadataService
     {
         $values = array_filter($uris, fn ($uri) => is_string($uri) && $uri !== '');
 
-        if (!empty($values)) {
+        if (! empty($values)) {
             $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", array_unique($values)));
             $query = "
                 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -81,7 +81,7 @@ class SjabloonMetadataService
                 }
             ";
         } else {
-            $query = "
+            $query = '
                 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
                 SELECT ?uri ?label
                 WHERE {
@@ -89,13 +89,13 @@ class SjabloonMetadataService
                         ?uri rdfs:label ?label .
                     }
                 }
-            ";
+            ';
         }
 
         $rows = $this->graphService->query($query);
         $labels = [];
         foreach ($rows as $row) {
-            if (!empty($row['label'])) {
+            if (! empty($row['label'])) {
                 $labels[$row['uri']] = $row['label'];
             }
         }
@@ -107,7 +107,7 @@ class SjabloonMetadataService
     {
         $this->assertShapesPresent();
 
-        $query = "
+        $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX sh: <http://www.w3.org/ns/shacl#>
             SELECT ?tbClass ?describedClass ?property
@@ -121,13 +121,13 @@ class SjabloonMetadataService
                 }
             }
             ORDER BY ?tbClass ?property
-        ";
+        ';
 
         $rows = $this->graphService->query($query);
         $map = [];
         foreach ($rows as $row) {
             $tbClass = $row['tbClass'];
-            if (!isset($map[$tbClass])) {
+            if (! isset($map[$tbClass])) {
                 $map[$tbClass] = [
                     'tb_class' => $tbClass,
                     'described_class' => $row['describedClass'],
@@ -149,7 +149,7 @@ class SjabloonMetadataService
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
             PREFIX sh: <http://www.w3.org/ns/shacl#>
 
-            SELECT ?sjabloonLabel ?label ?property ?datatype ?nodeKind ?order ?targetClass
+            SELECT ?sjabloonLabel ?label ?property ?datatype ?nodeKind ?order ?minCount ?targetClass
                    ?lookupEndpoint ?lookupQueryParam ?lookupSourceField ?lookupTrigger ?lookupDebounceMs ?lookupMinLength
             WHERE {
                 GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
@@ -162,6 +162,7 @@ class SjabloonMetadataService
                     OPTIONAL { ?propShape sh:datatype ?datatype . }
                     OPTIONAL { ?propShape sh:nodeKind ?nodeKind . }
                     OPTIONAL { ?propShape sh:order ?order . }
+                    OPTIONAL { ?propShape sh:minCount ?minCount . }
                     OPTIONAL { ?propShape vwm:lookupEndpoint ?lookupEndpoint . }
                     OPTIONAL { ?propShape vwm:lookupQueryParam ?lookupQueryParam . }
                     OPTIONAL { ?propShape vwm:lookupSourceField ?lookupSourceField . }
@@ -183,6 +184,7 @@ class SjabloonMetadataService
             $datatype = $row['datatype'] ?? null;
             $nodeKind = $row['nodeKind'] ?? null;
             $order = $row['order'] ?? null;
+            $minCount = isset($row['minCount']) ? (int) $row['minCount'] : 0;
             $type = $this->mapVeldType($property, $datatype, $nodeKind);
             $lookupEndpoint = $row['lookupEndpoint'] ?? null;
             $lookupQueryParam = $row['lookupQueryParam'] ?? null;
@@ -208,6 +210,7 @@ class SjabloonMetadataService
                 'property' => $property,
                 'type' => $type,
                 'volgorde' => $order !== null ? (int) $order : 999,
+                'required' => $minCount > 0,
                 'lookup' => $lookup,
             ];
         }, $rows);
@@ -217,6 +220,7 @@ class SjabloonMetadataService
             if ($order !== 0) {
                 return $order;
             }
+
             return strcmp($a['label'] ?? '', $b['label'] ?? '');
         });
 
@@ -229,7 +233,7 @@ class SjabloonMetadataService
 
     public function fetchRelatieRegels(): array
     {
-        $query = "
+        $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             SELECT ?vanClass ?naarClass ?predicate
             WHERE {
@@ -240,14 +244,14 @@ class SjabloonMetadataService
                            vwm:predicate ?predicate .
                 }
             }
-        ";
+        ';
 
         return $this->graphService->query($query);
     }
 
     public function fetchRoleShapeRules(): array
     {
-        $query = "
+        $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX sh: <http://www.w3.org/ns/shacl#>
             SELECT ?rolType ?rolTbClass ?vanClass ?naarClass ?vanProperty ?naarProperty
@@ -263,13 +267,14 @@ class SjabloonMetadataService
                            vwm:naarProperty ?naarProperty .
                 }
             }
-        ";
+        ';
 
         $rows = $this->graphService->query($query);
         $regels = [];
         foreach ($rows as $row) {
             $regels[$row['rolType']] = $row;
         }
+
         return $regels;
     }
 
@@ -321,6 +326,7 @@ class SjabloonMetadataService
                 'label' => $row['label'] ?? null,
             ];
         }
+
         return $map;
     }
 
@@ -348,6 +354,7 @@ class SjabloonMetadataService
         foreach ($rows as $row) {
             $map[$row['tbClass']] = $row['describedClass'];
         }
+
         return $map;
     }
 
@@ -380,7 +387,7 @@ class SjabloonMetadataService
         foreach ($rows as $row) {
             $tbClass = $row['tbClass'] ?? null;
             $property = $row['property'] ?? null;
-            if (!$tbClass || !$property) {
+            if (! $tbClass || ! $property) {
                 continue;
             }
 
@@ -405,7 +412,7 @@ class SjabloonMetadataService
 
     public function fetchRolTypesByKey(): array
     {
-        $query = "
+        $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             SELECT ?roleKey ?rolType
             WHERE {
@@ -414,13 +421,14 @@ class SjabloonMetadataService
                              vwm:roleKey ?roleKey .
                 }
             }
-        ";
+        ';
 
         $rows = $this->graphService->query($query);
         $map = [];
         foreach ($rows as $row) {
             $map[$row['roleKey']] = $row['rolType'];
         }
+
         return $map;
     }
 
@@ -443,7 +451,7 @@ class SjabloonMetadataService
         $rows = $this->graphService->query($query);
         $classes = [];
         foreach ($rows as $row) {
-            if (!empty($row['tbClass'])) {
+            if (! empty($row['tbClass'])) {
                 $classes[] = $row['tbClass'];
             }
         }
@@ -462,7 +470,7 @@ class SjabloonMetadataService
 
         $classes = [];
         foreach ($selectors as $selectorUri) {
-            if (!is_string($selectorUri) || $selectorUri === '') {
+            if (! is_string($selectorUri) || $selectorUri === '') {
                 continue;
             }
 
@@ -470,11 +478,12 @@ class SjabloonMetadataService
 
             if (isset($roleShapeRulesByType[$selectorUri]['rolTbClass'])) {
                 $classes[] = $roleShapeRulesByType[$selectorUri]['rolTbClass'];
+
                 continue;
             }
 
             $resolved = $this->resolveRoleShapeRuleFromSelector($selectorUri, $roleShapeRulesByType);
-            if (!empty($resolved['rolTbClass'])) {
+            if (! empty($resolved['rolTbClass'])) {
                 $classes[] = $resolved['rolTbClass'];
             }
         }
@@ -484,7 +493,7 @@ class SjabloonMetadataService
 
     public function resolveRoleShapeRuleFromSelector(?string $selectorUri, array $roleShapeRulesByType): ?array
     {
-        if (!is_string($selectorUri) || $selectorUri === '') {
+        if (! is_string($selectorUri) || $selectorUri === '') {
             return null;
         }
 
@@ -532,10 +541,12 @@ class SjabloonMetadataService
         $trimmed = rtrim($uri, '/');
         if (str_contains($trimmed, '#')) {
             $parts = explode('#', $trimmed);
+
             return $parts[count($parts) - 1] ?? $uri;
         }
 
         $parts = explode('/', $trimmed);
+
         return $parts[count($parts) - 1] ?? $uri;
     }
 
@@ -569,7 +580,7 @@ class SjabloonMetadataService
 
     private function assertShapesPresent(): void
     {
-        $query = "
+        $query = '
             PREFIX sh: <http://www.w3.org/ns/shacl#>
             SELECT (COUNT(?shape) AS ?shapeCount)
             WHERE {
@@ -577,7 +588,7 @@ class SjabloonMetadataService
                     ?shape a sh:NodeShape .
                 }
             }
-        ";
+        ';
 
         $rows = $this->graphService->query($query);
         $count = (int) ($rows[0]['shapeCount'] ?? 0);
@@ -595,6 +606,7 @@ class SjabloonMetadataService
 
         $parts = explode('_', $local);
         $suffix = end($parts);
+
         return is_string($suffix) ? $suffix : $local;
     }
 }

@@ -14,7 +14,7 @@ class VwmCoreSeeder extends Seeder
             ->where('code', 'AO-001')
             ->value('id');
 
-        if (!$caseSoortId) {
+        if (! $caseSoortId) {
             $caseSoortId = DB::table('case_soorten')->insertGetId([
                 'naam' => 'Algemeen Onderzoek',
                 'code' => 'AO-001',
@@ -29,7 +29,7 @@ class VwmCoreSeeder extends Seeder
             ->where('naam', 'Persoon Registreren')
             ->value('id');
 
-        if (!$transactieSoortId) {
+        if (! $transactieSoortId) {
             $transactieSoortId = DB::table('transactie_soorten')->insertGetId([
                 'naam' => 'Persoon Registreren',
                 'rdf_uri' => '',
@@ -44,7 +44,7 @@ class VwmCoreSeeder extends Seeder
             ->where('sjabloon_uri', 'http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving')
             ->exists();
 
-        if (!$linkExists) {
+        if (! $linkExists) {
             DB::table('transactie_soort_sjabloon')->insert([
                 'transactie_soort_id' => $transactieSoortId,
                 'sjabloon_uri' => 'http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving',
@@ -60,7 +60,7 @@ class VwmCoreSeeder extends Seeder
             ->where('naam', 'VerkeersIncident')
             ->value('id');
 
-        if (!$verkeersIncidentId) {
+        if (! $verkeersIncidentId) {
             $verkeersIncidentId = DB::table('transactie_soorten')->insertGetId([
                 'naam' => 'VerkeersIncident',
                 'rdf_uri' => '',
@@ -91,6 +91,7 @@ class VwmCoreSeeder extends Seeder
                         'volgorde' => $desc['volgorde'],
                         'updated_at' => now(),
                     ]);
+
                 continue;
             }
 
@@ -119,7 +120,7 @@ class VwmCoreSeeder extends Seeder
                 ->where('type', 'rol')
                 ->exists();
 
-            if (!$exists) {
+            if (! $exists) {
                 DB::table('transactie_soort_sjabloon')->insert([
                     'transactie_soort_id' => $verkeersIncidentId,
                     'sjabloon_uri' => $rolTb['uri'],
@@ -136,7 +137,7 @@ class VwmCoreSeeder extends Seeder
             ->where('naam', 'Winkeldiefstal')
             ->value('id');
 
-        if (!$winkeldiefstalId) {
+        if (! $winkeldiefstalId) {
             $winkeldiefstalId = DB::table('transactie_soorten')->insertGetId([
                 'naam' => 'Winkeldiefstal',
                 'rdf_uri' => '',
@@ -165,6 +166,7 @@ class VwmCoreSeeder extends Seeder
                         'volgorde' => $desc['volgorde'],
                         'updated_at' => now(),
                     ]);
+
                 continue;
             }
 
@@ -183,7 +185,7 @@ class VwmCoreSeeder extends Seeder
             ->where('code', 'WD-001')
             ->value('id');
 
-        if (!$winkeldiefstalCaseSoortId) {
+        if (! $winkeldiefstalCaseSoortId) {
             $winkeldiefstalCaseSoortId = DB::table('case_soorten')->insertGetId([
                 'naam' => 'Winkeldiefstal',
                 'code' => 'WD-001',
@@ -198,7 +200,7 @@ class VwmCoreSeeder extends Seeder
             ->where('transactie_soort_id', $transactieSoortId)
             ->exists();
 
-        if (!$workflowExists) {
+        if (! $workflowExists) {
             DB::table('case_soort_transactie')->insert([
                 'case_soort_id' => $caseSoortId,
                 'transactie_soort_id' => $transactieSoortId,

@@ -2,10 +2,8 @@
 
 use App\Http\Controllers\CaseController;
 use App\Services\GraphService;
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
-use Inertia\Inertia;
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
@@ -24,9 +22,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
 Route::get('/graph-test', function (GraphService $graphService) {
     try {
         $results = $graphService->testConnection();
-        return "Verbinding met GraphDB (" . env('GRAPHDB_REPO') . ") is gelukt! Aantal triples gevonden: " . $results->numRows();
-    } catch (\Exception $e) {
-        return "Fout bij verbinden met GraphDB: " . $e->getMessage();
+
+        return 'Verbinding met GraphDB ('.env('GRAPHDB_REPO').') is gelukt! Aantal triples gevonden: '.$results->numRows();
+    } catch (Exception $e) {
+        return 'Fout bij verbinden met GraphDB: '.$e->getMessage();
     }
 });
 

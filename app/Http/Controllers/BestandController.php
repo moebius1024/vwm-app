@@ -26,22 +26,22 @@ class BestandController extends Controller
         $uuid = (string) Str::uuid();
         $originalName = $file->getClientOriginalName() ?: 'bestand';
         $extension = $file->getClientOriginalExtension();
-        $storedName = $uuid . ($extension ? ".{$extension}" : '');
+        $storedName = $uuid.($extension ? ".{$extension}" : '');
         $disk = Storage::disk();
         $path = $disk->putFileAs('uploads/bestanden', $file, $storedName);
 
         $bestandUri = "http://vwm.voorbeeld.nl/data/bestand/{$uuid}";
         $mimeType = $file->getClientMimeType() ?: $file->getMimeType();
 
-        $triples = "";
+        $triples = '';
         $triples .= "<{$bestandUri}> a <http://ontologie.politie.nl/def/vwm#Bestand> .\n";
-        if (!empty($mimeType)) {
+        if (! empty($mimeType)) {
             $triples .= "<{$bestandUri}> <http://ontologie.politie.nl/def/vwm#mediaType> \"{$this->escapeLiteral($mimeType)}\" .\n";
         }
-        if (!empty($originalName)) {
+        if (! empty($originalName)) {
             $triples .= "<{$bestandUri}> <http://ontologie.politie.nl/def/vwm#bestandsnaam> \"{$this->escapeLiteral($originalName)}\" .\n";
         }
-        if (!empty($path)) {
+        if (! empty($path)) {
             $triples .= "<{$bestandUri}> <http://ontologie.politie.nl/def/vwm#externeOpslagIdentificatie> \"{$this->escapeLiteral($path)}\" .\n";
         }
 
@@ -59,8 +59,9 @@ class BestandController extends Controller
             if ($path) {
                 $disk->delete($path);
             }
+
             return response()->json([
-                'error' => 'GraphDB update mislukt: ' . $e->getMessage(),
+                'error' => 'GraphDB update mislukt: '.$e->getMessage(),
             ], 500);
         }
 
@@ -76,8 +77,8 @@ class BestandController extends Controller
     private function escapeLiteral(string $value): string
     {
         return str_replace(
-            ["\\", "\"", "\n", "\r", "\t"],
-            ["\\\\", "\\\"", "\\n", "\\r", "\\t"],
+            ['\\', '"', "\n", "\r", "\t"],
+            ['\\\\', '\\"', '\\n', '\\r', '\\t'],
             $value
         );
     }

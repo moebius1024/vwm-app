@@ -8,7 +8,7 @@ return new class extends Migration
 {
     public function up(): void
     {
-        if (!Schema::hasTable('gegevens_objecten_in_context')) {
+        if (! Schema::hasTable('gegevens_objecten_in_context')) {
             Schema::create('gegevens_objecten_in_context', function (Blueprint $table) {
                 $table->id();
                 $table->string('uuid')->unique();
@@ -19,7 +19,7 @@ return new class extends Migration
             });
         }
 
-        if (!Schema::hasTable('toestands_beschrijvingen')) {
+        if (! Schema::hasTable('toestands_beschrijvingen')) {
             Schema::create('toestands_beschrijvingen', function (Blueprint $table) {
                 $table->id();
                 $table->string('uuid')->unique();
@@ -31,25 +31,25 @@ return new class extends Migration
         }
 
         Schema::table('object_mutaties', function (Blueprint $table) {
-            if (!Schema::hasColumn('object_mutaties', 'gegevens_object_in_context_id')) {
+            if (! Schema::hasColumn('object_mutaties', 'gegevens_object_in_context_id')) {
                 $table->foreignId('gegevens_object_in_context_id')
                     ->nullable()
                     ->constrained('gegevens_objecten_in_context')
                     ->onDelete('set null');
             }
-            if (!Schema::hasColumn('object_mutaties', 'geproduceerde_toestand_id')) {
+            if (! Schema::hasColumn('object_mutaties', 'geproduceerde_toestand_id')) {
                 $table->foreignId('geproduceerde_toestand_id')
                     ->nullable()
                     ->constrained('toestands_beschrijvingen')
                     ->onDelete('set null');
             }
-            if (!Schema::hasColumn('object_mutaties', 'verwijderde_toestand_id')) {
+            if (! Schema::hasColumn('object_mutaties', 'verwijderde_toestand_id')) {
                 $table->foreignId('verwijderde_toestand_id')
                     ->nullable()
                     ->constrained('toestands_beschrijvingen')
                     ->onDelete('set null');
             }
-            if (!Schema::hasColumn('object_mutaties', 'datum_tijd')) {
+            if (! Schema::hasColumn('object_mutaties', 'datum_tijd')) {
                 $table->timestamp('datum_tijd')->nullable();
             }
         });

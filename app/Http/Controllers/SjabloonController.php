@@ -11,6 +11,7 @@ use Illuminate\Support\Str; // Belangrijk voor UUID's
 class SjabloonController extends Controller
 {
     protected $graphService;
+
     protected $metadataService;
 
     public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService)
@@ -26,7 +27,7 @@ class SjabloonController extends Controller
     {
         $ts = DB::table('transactie_soorten')->find($transactieSoortId);
 
-        if (!$ts) {
+        if (! $ts) {
             return response()->json(['error' => 'TransactieSoort niet gevonden'], 404);
         }
 
@@ -72,7 +73,7 @@ class SjabloonController extends Controller
             $meta = $roleMeta[$selectorUri] ?? null;
             $resolvedRoleType = null;
 
-            if (!$meta) {
+            if (! $meta) {
                 $resolved = $this->metadataService->resolveRoleShapeRuleFromSelector($selectorUri, $roleShapeRules);
                 if ($resolved) {
                     $resolvedRoleType = $resolved['rolType'] ?? null;
@@ -87,7 +88,7 @@ class SjabloonController extends Controller
                 }
             }
 
-            if (!$meta) {
+            if (! $meta) {
                 continue;
             }
             $allowedRoles[] = [
@@ -152,6 +153,16 @@ class SjabloonController extends Controller
     /**
      * Haalt labels op voor een lijst met URI's (rdfs:label).
      */
+    public function listAllLabels()
+    {
+        return response()->json([
+            'labels' => $this->metadataService->listLabels(),
+        ]);
+    }
+
+    /**
+     * Haalt labels op voor een lijst met URI's (rdfs:label).
+     */
     public function listLabels(Request $request)
     {
         $uris = $request->input('uris', []);
@@ -200,15 +211,20 @@ class SjabloonController extends Controller
             ->orderBy('id')
             ->first();
 
-        if (!$dossier) {
+        if (! $dossier) {
             return response()->json(['error' => 'Geen dossier gevonden voor deze case'], 422);
         }
 
         $relatieRegels = $this->metadataService->fetchRelatieRegels();
         $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
         $rolTypesByKey = $this->metadataService->fetchRolTypesByKey();
-        $allowedRoleTbClasses = $this->metadataService->fetchAllowedRoleTbClasses($base['transactie_soort_id'], $roleShapeRules);
-        $enforceAllowedRoleTb = !empty($allowedRoleTbClasses);
+        $allowedRoleSelectors = DB::table('transactie_soort_sjabloon')
+            ->where('transactie_soort_id', $base['transactie_soort_id'])
+            ->where('type', 'rol')
+            ->orderBy('volgorde')
+            ->pluck('sjabloon_uri')
+            ->all();
+        $enforceAllowedRole = ! empty($allowedRoleSelectors);
 
         // 2. Ondersteun meerdere objecten per scherm (en legacy single-object payload)
         $objects = $request->input('objects');
@@ -248,6 +264,28 @@ class SjabloonController extends Controller
         $tbClasses = array_values(array_filter(array_unique(array_map(function ($object) {
             return $object['sjabloon_uri'] ?? null;
         }, $objects))));
+        $describedClassByTbClass = $this->metadataService->fetchDescribedClassByTbClasses($tbClasses);
+
+        foreach ($objects as &$object) {
+            $tbClass = $object['sjabloon_uri'] ?? null;
+            $expectedTargetClass = is_string($tbClass) ? ($describedClassByTbClass[$tbClass] ?? null) : null;
+
+            if (! is_string($expectedTargetClass) || $expectedTargetClass === '') {
+                return response()->json([
+                    'error' => "Onbekende of onvolledige sjabloondefinitie: {$tbClass}",
+                ], 422);
+            }
+
+            if (($object['target_class'] ?? null) !== $expectedTargetClass) {
+                return response()->json([
+                    'error' => "target_class komt niet overeen met sjabloon {$tbClass}.",
+                ], 422);
+            }
+
+            $object['target_class'] = $expectedTargetClass;
+        }
+        unset($object);
+
         $valueHintsByTbClass = $this->metadataService->fetchPropertyValueHintsByTbClasses($tbClasses);
 
         $targetClassLimit = $this->fetchTargetClassLimitForTransactie($base['transactie_soort_id']);
@@ -270,358 +308,382 @@ class SjabloonController extends Controller
 
         $objectUris = [];
         $objectMeta = [];
-        $allTriples = "";
+        $allTriples = '';
         $nowIso = now()->toAtomString();
         $vwm = 'http://ontologie.politie.nl/def/vwm#';
+        $graphUpdated = false;
+
+        DB::beginTransaction();
 
         // 3. Registreer de processtap + objectmutaties in SQLite
-        $transactieId = DB::transaction(function () use ($base, $objects, &$objectUris, &$allTriples, &$objectMeta, $dossier, $nowIso, $vwm, $valueHintsByTbClass) {
-            $transactieId = DB::table('transacties')->insertGetId([
-                'case_id' => $base['case_id'],
-                'transactie_soort_id' => $base['transactie_soort_id'],
-                'user_id' => 1, // In een later stadium halen we dit uit Auth::id()
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
-
-            foreach ($objects as $object) {
-                $tbClass = $object['sjabloon_uri']; // TB-class (bijv. vwm:PersoonsBeschrijving)
-                $describedClass = $object['target_class']; // Domeinclass (bijv. dpm:Person)
-
-                $goUuid = (string) Str::uuid();
-                $goicUuid = (string) Str::uuid();
-                $tbUuid = (string) Str::uuid();
-                $mutatieUuid = (string) Str::uuid();
-
-                $goUri = "http://vwm.voorbeeld.nl/data/go/" . $goUuid;
-                $goicUri = "http://vwm.voorbeeld.nl/data/goic/" . $goicUuid;
-                $tbUri = "http://vwm.voorbeeld.nl/data/tb/" . $tbUuid;
-                $mutatieUri = "http://vwm.voorbeeld.nl/data/mutatie/" . $mutatieUuid;
-
-                $objectUris[] = $tbUri;
-
-                $goicId = DB::table('gegevens_objecten_in_context')->insertGetId([
-                    'uuid' => $goicUuid,
-                    'rdf_uri' => $goicUri,
-                    'dossier_id' => $dossier->id,
-                    'context_data' => null,
+        try {
+            $transactieId = DB::transaction(function () use ($base, $objects, &$objectUris, &$allTriples, &$objectMeta, $dossier, $nowIso, $vwm, $valueHintsByTbClass) {
+                $transactieId = DB::table('transacties')->insertGetId([
+                    'case_id' => $base['case_id'],
+                    'transactie_soort_id' => $base['transactie_soort_id'],
+                    'user_id' => 1, // In een later stadium halen we dit uit Auth::id()
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
 
-                $tbId = DB::table('toestands_beschrijvingen')->insertGetId([
-                    'uuid' => $tbUuid,
-                    'rdf_uri' => $tbUri,
-                    'beschrijving' => $tbClass,
-                    'toestand_data' => json_encode($object['data']),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                foreach ($objects as $object) {
+                    $tbClass = $object['sjabloon_uri']; // TB-class (bijv. vwm:PersoonsBeschrijving)
+                    $describedClass = $object['target_class']; // Domeinclass (bijv. dpm:Person)
 
-                $objectMeta[] = [
-                    'tb_uri' => $tbUri,
-                    'goic_uri' => $goicUri,
-                    'goic_id' => $goicId,
-                    'tb_id' => $tbId,
-                    'target_class' => $describedClass,
-                    'client_id' => $object['client_id'] ?? null,
-                ];
+                    $goUuid = (string) Str::uuid();
+                    $goicUuid = (string) Str::uuid();
+                    $tbUuid = (string) Str::uuid();
+                    $mutatieUuid = (string) Str::uuid();
 
-                DB::table('object_mutaties')->insert([
-                    'transactie_id' => $transactieId,
-                    'sjabloon_uri' => $tbClass,
-                    'object_uri' => $tbUri,
-                    'gegevens_object_in_context_id' => $goicId,
-                    'geproduceerde_toestand_id' => $tbId,
-                    'datum_tijd' => now(),
-                    'data' => json_encode($object['data']),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
+                    $goUri = 'http://vwm.voorbeeld.nl/data/go/'.$goUuid;
+                    $goicUri = 'http://vwm.voorbeeld.nl/data/goic/'.$goicUuid;
+                    $tbUri = 'http://vwm.voorbeeld.nl/data/tb/'.$tbUuid;
+                    $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.$mutatieUuid;
 
-                // GO + GOIC + TB kernstructuur
-                $allTriples .= "<{$goUri}> a <{$vwm}GegevensObject> . \n";
-                $allTriples .= "<{$goicUri}> a <{$vwm}GegevensObjectInContext> . \n";
-                $allTriples .= "<{$goicUri}> <{$vwm}beschrijftGO> <{$goUri}> . \n";
-                $allTriples .= "<{$goicUri}> <{$vwm}hoortBijDossier> <{$dossier->rdf_uri}> . \n";
-                $allTriples .= "<{$tbUri}> a <{$tbClass}> . \n";
-                $allTriples .= "<{$tbUri}> <{$vwm}beschrijftGOIC> <{$goicUri}> . \n";
-                $allTriples .= "<{$tbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+                    $objectUris[] = $tbUri;
 
-                // ObjectMutatie als RDF-event
-                $allTriples .= "<{$mutatieUri}> a <{$vwm}ObjectMutatie> . \n";
-                $allTriples .= "<{$mutatieUri}> <{$vwm}heeftBetrekkingOp> <{$goicUri}> . \n";
-                $allTriples .= "<{$mutatieUri}> <{$vwm}produceert> <{$tbUri}> . \n";
-                $allTriples .= "<{$mutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+                    $goicId = DB::table('gegevens_objecten_in_context')->insertGetId([
+                        'uuid' => $goicUuid,
+                        'rdf_uri' => $goicUri,
+                        'dossier_id' => $dossier->id,
+                        'context_data' => null,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
 
-                $dataTypes = $object['data_types'] ?? [];
-                $valueHints = $valueHintsByTbClass[$tbClass] ?? [];
+                    $tbId = DB::table('toestands_beschrijvingen')->insertGetId([
+                        'uuid' => $tbUuid,
+                        'rdf_uri' => $tbUri,
+                        'beschrijving' => $tbClass,
+                        'toestand_data' => json_encode($object['data']),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
 
-                foreach ($object['data'] as $propertyUri => $value) {
-                    $valueType = $this->resolveValueType(
-                        $dataTypes[$propertyUri] ?? null,
-                        $valueHints[$propertyUri] ?? null
-                    );
+                    $objectMeta[] = [
+                        'tb_uri' => $tbUri,
+                        'goic_uri' => $goicUri,
+                        'goic_id' => $goicId,
+                        'tb_id' => $tbId,
+                        'target_class' => $describedClass,
+                        'client_id' => $object['client_id'] ?? null,
+                    ];
 
-                    if (is_array($value)) {
-                        foreach ($value as $entry) {
-                            if ($entry === null || $entry === '') {
-                                continue;
+                    DB::table('object_mutaties')->insert([
+                        'transactie_id' => $transactieId,
+                        'sjabloon_uri' => $tbClass,
+                        'object_uri' => $tbUri,
+                        'gegevens_object_in_context_id' => $goicId,
+                        'geproduceerde_toestand_id' => $tbId,
+                        'datum_tijd' => now(),
+                        'data' => json_encode($object['data']),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    // GO + GOIC + TB kernstructuur
+                    $allTriples .= "<{$goUri}> a <{$vwm}GegevensObject> . \n";
+                    $allTriples .= "<{$goicUri}> a <{$vwm}GegevensObjectInContext> . \n";
+                    $allTriples .= "<{$goicUri}> <{$vwm}beschrijftGO> <{$goUri}> . \n";
+                    $allTriples .= "<{$goicUri}> <{$vwm}hoortBijDossier> <{$dossier->rdf_uri}> . \n";
+                    $allTriples .= "<{$tbUri}> a <{$tbClass}> . \n";
+                    $allTriples .= "<{$tbUri}> <{$vwm}beschrijftGOIC> <{$goicUri}> . \n";
+                    $allTriples .= "<{$tbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+
+                    // ObjectMutatie als RDF-event
+                    $allTriples .= "<{$mutatieUri}> a <{$vwm}ObjectMutatie> . \n";
+                    $allTriples .= "<{$mutatieUri}> <{$vwm}heeftBetrekkingOp> <{$goicUri}> . \n";
+                    $allTriples .= "<{$mutatieUri}> <{$vwm}produceert> <{$tbUri}> . \n";
+                    $allTriples .= "<{$mutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+
+                    $dataTypes = $object['data_types'] ?? [];
+                    $valueHints = $valueHintsByTbClass[$tbClass] ?? [];
+
+                    foreach ($object['data'] as $propertyUri => $value) {
+                        $valueType = $this->resolveValueType(
+                            $dataTypes[$propertyUri] ?? null,
+                            $valueHints[$propertyUri] ?? null
+                        );
+
+                        if (is_array($value)) {
+                            foreach ($value as $entry) {
+                                if ($entry === null || $entry === '') {
+                                    continue;
+                                }
+                                $sparqlValue = $this->toSparqlValue($entry, $valueType);
+                                $allTriples .= "<{$tbUri}> <{$propertyUri}> {$sparqlValue} . \n";
                             }
-                            $sparqlValue = $this->toSparqlValue($entry, $valueType);
-                            $allTriples .= "<{$tbUri}> <{$propertyUri}> {$sparqlValue} . \n";
+
+                            continue;
                         }
-                        continue;
-                    }
 
-                    if ($value === null || $value === '') {
-                        continue;
-                    }
+                        if ($value === null || $value === '') {
+                            continue;
+                        }
 
-                    $sparqlValue = $this->toSparqlValue($value, $valueType);
-                    $allTriples .= "<{$tbUri}> <{$propertyUri}> {$sparqlValue} . \n";
+                        $sparqlValue = $this->toSparqlValue($value, $valueType);
+                        $allTriples .= "<{$tbUri}> <{$propertyUri}> {$sparqlValue} . \n";
+                    }
                 }
+
+                return $transactieId;
+            });
+
+            // 3. Auto-koppelingen op basis van relatie-regels
+            $goicByClass = [];
+            foreach ($objectMeta as $meta) {
+                $goicByClass[$meta['target_class']][] = $meta['goic_uri'];
             }
 
-            return $transactieId;
-        });
-
-        // 3. Auto-koppelingen op basis van relatie-regels
-        $goicByClass = [];
-        foreach ($objectMeta as $meta) {
-            $goicByClass[$meta['target_class']][] = $meta['goic_uri'];
-        }
-
-        // Bestaande GOICs uit dossier(s) ophalen zodat rollen alleen op opgeslagen objecten kunnen worden gezet
-        $caseDossierIds = DB::table('dossiers')
-            ->where('case_id', $base['case_id'])
-            ->pluck('id')
-            ->all();
-
-        $existingGoics = [];
-        $existingGoicIds = [];
-        if (!empty($caseDossierIds)) {
-            $existingGoics = DB::table('gegevens_objecten_in_context')
-                ->whereIn('dossier_id', $caseDossierIds)
-                ->get(['id', 'rdf_uri'])
+            // Bestaande GOICs uit dossier(s) ophalen zodat rollen alleen op opgeslagen objecten kunnen worden gezet
+            $caseDossierIds = DB::table('dossiers')
+                ->where('case_id', $base['case_id'])
+                ->pluck('id')
                 ->all();
-            $existingGoicIds = array_map(fn ($row) => $row->id, $existingGoics);
-        }
 
-        $tbByGoic = [];
-        if (!empty($existingGoicIds)) {
-            $tbRows = DB::table('object_mutaties')
-                ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-                ->whereIn('object_mutaties.gegevens_object_in_context_id', $existingGoicIds)
-                ->orderBy('object_mutaties.created_at')
-                ->get([
-                    'object_mutaties.gegevens_object_in_context_id as goic_id',
-                    'toestands_beschrijvingen.beschrijving as tb_class',
-                ]);
+            $existingGoics = [];
+            $existingGoicIds = [];
+            if (! empty($caseDossierIds)) {
+                $existingGoics = DB::table('gegevens_objecten_in_context')
+                    ->whereIn('dossier_id', $caseDossierIds)
+                    ->get(['id', 'rdf_uri'])
+                    ->all();
+                $existingGoicIds = array_map(fn ($row) => $row->id, $existingGoics);
+            }
 
-            foreach ($tbRows as $row) {
-                if (!empty($row->tb_class)) {
-                    $tbByGoic[$row->goic_id] = $row->tb_class;
+            $tbHistoryByGoic = [];
+            $tbClassesInUse = [];
+            if (! empty($existingGoicIds)) {
+                $tbRows = DB::table('object_mutaties')
+                    ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
+                    ->whereIn('object_mutaties.gegevens_object_in_context_id', $existingGoicIds)
+                    ->orderBy('object_mutaties.created_at')
+                    ->orderBy('object_mutaties.id')
+                    ->get([
+                        'object_mutaties.gegevens_object_in_context_id as goic_id',
+                        'toestands_beschrijvingen.beschrijving as tb_class',
+                    ]);
+
+                foreach ($tbRows as $row) {
+                    if (! empty($row->tb_class)) {
+                        $tbHistoryByGoic[$row->goic_id][] = $row->tb_class;
+                        $tbClassesInUse[$row->tb_class] = true;
+                    }
                 }
             }
-        }
 
-        $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_values(array_unique($tbByGoic)));
-        $goicMetaById = [];
-        foreach ($existingGoics as $goic) {
-            $tbClass = $tbByGoic[$goic->id] ?? null;
-            $targetClass = $tbClass ? ($describedByTb[$tbClass] ?? null) : null;
-            $goicMetaById[$goic->id] = [
-                'goic_id' => $goic->id,
-                'goic_uri' => $goic->rdf_uri,
-                'target_class' => $targetClass,
-            ];
-            if ($targetClass) {
-                $goicByClass[$targetClass][] = $goic->rdf_uri;
+            $describedByTb = [];
+            if (! empty($tbClassesInUse)) {
+                $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_keys($tbClassesInUse));
             }
-        }
 
-        foreach ($relatieRegels as $regel) {
-            $froms = $goicByClass[$regel['vanClass']] ?? [];
-            $tos = $goicByClass[$regel['naarClass']] ?? [];
-            foreach ($froms as $from) {
-                foreach ($tos as $to) {
-                    $allTriples .= "<{$from}> <{$regel['predicate']}> <{$to}> . \n";
+            $goicMetaById = [];
+            foreach ($existingGoics as $goic) {
+                $tbHistory = $tbHistoryByGoic[$goic->id] ?? [];
+                $targetClass = null;
+
+                // Neem de meest recente TB die echt een domeinclass beschrijft;
+                // rol-mutaties mogen de class van het bronobject niet "overschrijven".
+                for ($index = count($tbHistory) - 1; $index >= 0; $index--) {
+                    $tbClass = $tbHistory[$index];
+                    $candidateTargetClass = $describedByTb[$tbClass] ?? null;
+                    if (is_string($candidateTargetClass) && $candidateTargetClass !== '') {
+                        $targetClass = $candidateTargetClass;
+                        break;
+                    }
+                }
+
+                $goicMetaById[$goic->id] = [
+                    'goic_id' => $goic->id,
+                    'goic_uri' => $goic->rdf_uri,
+                    'target_class' => $targetClass,
+                ];
+                if ($targetClass) {
+                    $goicByClass[$targetClass][] = $goic->rdf_uri;
                 }
             }
-        }
 
-        // 4. Rollen (generiek via rol-regels)
-        $roles = $request->input('roles', []);
-        $roleItems = is_array($roles['items'] ?? null) ? $roles['items'] : [];
-        $roleTbClassesFromItems = array_values(array_filter(array_map(function ($item) {
-            return $item['roleTbClass'] ?? null;
-        }, $roleItems)));
-        $rolTbMetaByClass = $this->metadataService->fetchRolTbMetaByClasses($roleTbClassesFromItems);
-
-        $clientMap = [];
-        foreach ($objectMeta as $meta) {
-            if (!empty($meta['client_id'])) {
-                $clientMap[$meta['client_id']] = $meta;
-            }
-        }
-
-        // Legacy payloads: elke key onder roles (behalve items) is een roleKey uit RDF.
-        foreach ($roles as $roleKey => $legacyRoles) {
-            if ($roleKey === 'items' || !is_array($legacyRoles)) {
-                continue;
+            foreach ($relatieRegels as $regel) {
+                $froms = $goicByClass[$regel['vanClass']] ?? [];
+                $tos = $goicByClass[$regel['naarClass']] ?? [];
+                foreach ($froms as $from) {
+                    foreach ($tos as $to) {
+                        $allTriples .= "<{$from}> <{$regel['predicate']}> <{$to}> . \n";
+                    }
+                }
             }
 
-            $roleTypeUri = $rolTypesByKey[$roleKey] ?? null;
-            if (!$roleTypeUri) {
-                continue;
+            // 4. Rollen (generiek via rol-regels)
+            $roles = $request->input('roles', []);
+            $roleItems = is_array($roles['items'] ?? null) ? $roles['items'] : [];
+            $roleTbClassesFromItems = array_values(array_filter(array_map(function ($item) {
+                return $item['roleTbClass'] ?? null;
+            }, $roleItems)));
+            $rolTbMetaByClass = $this->metadataService->fetchRolTbMetaByClasses($roleTbClassesFromItems);
+
+            $clientMap = [];
+            foreach ($objectMeta as $meta) {
+                if (! empty($meta['client_id'])) {
+                    $clientMap[$meta['client_id']] = $meta;
+                }
             }
 
-            foreach ($legacyRoles as $role) {
-                if (!is_array($role)) {
+            // Legacy payloads: elke key onder roles (behalve items) is een roleKey uit RDF.
+            foreach ($roles as $roleKey => $legacyRoles) {
+                if ($roleKey === 'items' || ! is_array($legacyRoles)) {
                     continue;
                 }
 
-                [$fromId, $toId] = $this->extractLegacyRoleEndpoints($role);
-                $roleItems[] = [
-                    'roleType' => $roleTypeUri,
-                    'fromId' => $fromId,
-                    'toId' => $toId,
-                ];
-            }
-        }
-
-        foreach ($roleItems as $roleItem) {
-            $roleType = $roleItem['roleType'] ?? null;
-            $roleTbClass = $roleItem['roleTbClass'] ?? null;
-            $fromId = $roleItem['fromId'] ?? null;
-            $toId = $roleItem['toId'] ?? null;
-            $fromGoicId = $roleItem['fromGoicId'] ?? null;
-            $toGoicId = $roleItem['toGoicId'] ?? null;
-
-            if ((empty($roleType) && empty($roleTbClass)) || (empty($fromId) && empty($fromGoicId))) {
-                continue;
-            }
-
-            $roleMeta = null;
-            if (!empty($roleTbClass)) {
-                $roleMeta = $rolTbMetaByClass[$roleTbClass] ?? null;
-            }
-
-            if (!$roleMeta && !empty($roleType)) {
-                $regel = $roleShapeRules[$roleType] ?? null;
-                if ($regel) {
-                    $roleMeta = [
-                        'rolTbClass' => $regel['rolTbClass'] ?? null,
-                        'vanClass' => $regel['vanClass'] ?? null,
-                        'naarClass' => $regel['naarClass'] ?? null,
-                        'vanProperty' => $regel['vanProperty'] ?? null,
-                        'naarProperty' => $regel['naarProperty'] ?? null,
-                    ];
+                $roleTypeUri = $rolTypesByKey[$roleKey] ?? null;
+                if (! $roleTypeUri) {
+                    continue;
                 }
-            }
 
-            if (!$roleMeta && !empty($roleTbClass)) {
-                $regel = $this->metadataService->resolveRoleShapeRuleFromSelector($roleTbClass, $roleShapeRules);
-                if ($regel) {
-                    if (empty($roleType) && !empty($regel['rolType'])) {
-                        $roleType = $regel['rolType'];
+                foreach ($legacyRoles as $role) {
+                    if (! is_array($role)) {
+                        continue;
                     }
-                    $roleMeta = [
-                        'rolTbClass' => $regel['rolTbClass'] ?? null,
-                        'vanClass' => $regel['vanClass'] ?? null,
-                        'naarClass' => $regel['naarClass'] ?? null,
-                        'vanProperty' => $regel['vanProperty'] ?? null,
-                        'naarProperty' => $regel['naarProperty'] ?? null,
+
+                    [$fromId, $toId] = $this->extractLegacyRoleEndpoints($role);
+                    $roleItems[] = [
+                        'roleType' => $roleTypeUri,
+                        'fromId' => $fromId,
+                        'toId' => $toId,
                     ];
                 }
             }
 
-            if (!$roleMeta || empty($roleMeta['rolTbClass'])) {
-                continue;
-            }
+            foreach ($roleItems as $roleItem) {
+                $roleType = $roleItem['roleType'] ?? null;
+                $roleTbClass = $roleItem['roleTbClass'] ?? null;
+                $fromId = $roleItem['fromId'] ?? null;
+                $toId = $roleItem['toId'] ?? null;
+                $fromGoicId = $roleItem['fromGoicId'] ?? null;
+                $toGoicId = $roleItem['toGoicId'] ?? null;
 
-            if ($enforceAllowedRoleTb && !in_array($roleMeta['rolTbClass'], $allowedRoleTbClasses, true)) {
-                continue;
-            }
-
-            $fromMeta = null;
-            if (!empty($fromGoicId) && !empty($goicMetaById[$fromGoicId])) {
-                $fromMeta = $goicMetaById[$fromGoicId];
-            } elseif (!empty($fromId) && !empty($clientMap[$fromId])) {
-                $fromMeta = $clientMap[$fromId];
-            }
-
-            if (!$fromMeta || $fromMeta['target_class'] !== $roleMeta['vanClass']) {
-                continue;
-            }
-
-            $targetGoics = [];
-            if (!empty($toGoicId) && !empty($goicMetaById[$toGoicId])) {
-                $toMeta = $goicMetaById[$toGoicId];
-                if ($toMeta['target_class'] === $roleMeta['naarClass']) {
-                    $targetGoics[] = $toMeta['goic_uri'];
-                }
-            } elseif (!empty($toId) && !empty($clientMap[$toId])) {
-                $toMeta = $clientMap[$toId];
-                if ($toMeta['target_class'] === $roleMeta['naarClass']) {
-                    $targetGoics[] = $toMeta['goic_uri'];
-                }
-            } else {
-                $targetGoics = $goicByClass[$roleMeta['naarClass']] ?? [];
-            }
-
-            foreach ($targetGoics as $toGoic) {
-                $roleTbUuid = (string) Str::uuid();
-                $roleTbUri = "http://vwm.voorbeeld.nl/data/tb/" . $roleTbUuid;
-                $roleMutatieUuid = (string) Str::uuid();
-                $roleMutatieUri = "http://vwm.voorbeeld.nl/data/mutatie/" . $roleMutatieUuid;
-
-                $roleData = [
-                    'van' => $fromMeta['goic_uri'],
-                    'naar' => $toGoic,
-                ];
-                if (!empty($roleType)) {
-                    $roleData['rolType'] = $roleType;
+                if ((empty($roleType) && empty($roleTbClass)) || (empty($fromId) && empty($fromGoicId))) {
+                    continue;
                 }
 
-                $roleTbId = DB::table('toestands_beschrijvingen')->insertGetId([
-                    'uuid' => $roleTbUuid,
-                    'rdf_uri' => $roleTbUri,
-                    'beschrijving' => $roleMeta['rolTbClass'],
-                    'toestand_data' => json_encode($roleData),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                DB::table('object_mutaties')->insert([
-                    'transactie_id' => $transactieId,
-                    'sjabloon_uri' => $roleMeta['rolTbClass'],
-                    'object_uri' => $roleTbUri,
-                    'gegevens_object_in_context_id' => $fromMeta['goic_id'] ?? null,
-                    'geproduceerde_toestand_id' => $roleTbId,
-                    'datum_tijd' => now(),
-                    'data' => json_encode($roleData),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                $allTriples .= "<{$roleTbUri}> a <{$roleMeta['rolTbClass']}> . \n";
-                $allTriples .= "<{$roleTbUri}> <{$roleMeta['vanProperty']}> <{$fromMeta['goic_uri']}> . \n";
-                $allTriples .= "<{$roleTbUri}> <{$roleMeta['naarProperty']}> <{$toGoic}> . \n";
-                if (!empty($roleType)) {
-                    $allTriples .= "<{$roleTbUri}> <{$vwm}rolType> <{$roleType}> . \n";
+                $roleMeta = null;
+                if (! empty($roleTbClass)) {
+                    $roleMeta = $rolTbMetaByClass[$roleTbClass] ?? null;
                 }
-                $allTriples .= "<{$roleTbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
 
-                $allTriples .= "<{$roleMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
-                $allTriples .= "<{$roleMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$fromMeta['goic_uri']}> . \n";
-                $allTriples .= "<{$roleMutatieUri}> <{$vwm}produceert> <{$roleTbUri}> . \n";
-                $allTriples .= "<{$roleMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+                if (! $roleMeta && ! empty($roleType)) {
+                    $regel = $roleShapeRules[$roleType] ?? null;
+                    if ($regel) {
+                        $roleMeta = [
+                            'rolTbClass' => $regel['rolTbClass'] ?? null,
+                            'vanClass' => $regel['vanClass'] ?? null,
+                            'naarClass' => $regel['naarClass'] ?? null,
+                            'vanProperty' => $regel['vanProperty'] ?? null,
+                            'naarProperty' => $regel['naarProperty'] ?? null,
+                        ];
+                    }
+                }
+
+                if (! $roleMeta && ! empty($roleTbClass)) {
+                    $regel = $this->metadataService->resolveRoleShapeRuleFromSelector($roleTbClass, $roleShapeRules);
+                    if ($regel) {
+                        if (empty($roleType) && ! empty($regel['rolType'])) {
+                            $roleType = $regel['rolType'];
+                        }
+                        $roleMeta = [
+                            'rolTbClass' => $regel['rolTbClass'] ?? null,
+                            'vanClass' => $regel['vanClass'] ?? null,
+                            'naarClass' => $regel['naarClass'] ?? null,
+                            'vanProperty' => $regel['vanProperty'] ?? null,
+                            'naarProperty' => $regel['naarProperty'] ?? null,
+                        ];
+                    }
+                }
+
+                if (! $roleMeta || empty($roleMeta['rolTbClass'])) {
+                    continue;
+                }
+
+                if ($enforceAllowedRole && ! $this->isAllowedRoleSelection($roleType, $roleTbClass, $allowedRoleSelectors, $roleShapeRules)) {
+                    continue;
+                }
+
+                $fromMeta = null;
+                if (! empty($fromGoicId) && ! empty($goicMetaById[$fromGoicId])) {
+                    $fromMeta = $goicMetaById[$fromGoicId];
+                } elseif (! empty($fromId) && ! empty($clientMap[$fromId])) {
+                    $fromMeta = $clientMap[$fromId];
+                }
+
+                if (! $fromMeta || $fromMeta['target_class'] !== $roleMeta['vanClass']) {
+                    continue;
+                }
+
+                $targetGoics = [];
+                if (! empty($toGoicId) && ! empty($goicMetaById[$toGoicId])) {
+                    $toMeta = $goicMetaById[$toGoicId];
+                    if ($toMeta['target_class'] === $roleMeta['naarClass']) {
+                        $targetGoics[] = $toMeta['goic_uri'];
+                    }
+                } elseif (! empty($toId) && ! empty($clientMap[$toId])) {
+                    $toMeta = $clientMap[$toId];
+                    if ($toMeta['target_class'] === $roleMeta['naarClass']) {
+                        $targetGoics[] = $toMeta['goic_uri'];
+                    }
+                } else {
+                    $targetGoics = $goicByClass[$roleMeta['naarClass']] ?? [];
+                }
+
+                foreach ($targetGoics as $toGoic) {
+                    $roleTbUuid = (string) Str::uuid();
+                    $roleTbUri = 'http://vwm.voorbeeld.nl/data/tb/'.$roleTbUuid;
+                    $roleMutatieUuid = (string) Str::uuid();
+                    $roleMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.$roleMutatieUuid;
+
+                    $roleData = [
+                        'van' => $fromMeta['goic_uri'],
+                        'naar' => $toGoic,
+                    ];
+                    if (! empty($roleType)) {
+                        $roleData['rolType'] = $roleType;
+                    }
+
+                    $roleTbId = DB::table('toestands_beschrijvingen')->insertGetId([
+                        'uuid' => $roleTbUuid,
+                        'rdf_uri' => $roleTbUri,
+                        'beschrijving' => $roleMeta['rolTbClass'],
+                        'toestand_data' => json_encode($roleData),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    DB::table('object_mutaties')->insert([
+                        'transactie_id' => $transactieId,
+                        'sjabloon_uri' => $roleMeta['rolTbClass'],
+                        'object_uri' => $roleTbUri,
+                        'gegevens_object_in_context_id' => $fromMeta['goic_id'] ?? null,
+                        'geproduceerde_toestand_id' => $roleTbId,
+                        'datum_tijd' => now(),
+                        'data' => json_encode($roleData),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $allTriples .= "<{$roleTbUri}> a <{$roleMeta['rolTbClass']}> . \n";
+                    $allTriples .= "<{$roleTbUri}> <{$roleMeta['vanProperty']}> <{$fromMeta['goic_uri']}> . \n";
+                    $allTriples .= "<{$roleTbUri}> <{$roleMeta['naarProperty']}> <{$toGoic}> . \n";
+                    if (! empty($roleType)) {
+                        $allTriples .= "<{$roleTbUri}> <{$vwm}rolType> <{$roleType}> . \n";
+                    }
+                    $allTriples .= "<{$roleTbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+
+                    $allTriples .= "<{$roleMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
+                    $allTriples .= "<{$roleMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$fromMeta['goic_uri']}> . \n";
+                    $allTriples .= "<{$roleMutatieUri}> <{$vwm}produceert> <{$roleTbUri}> . \n";
+                    $allTriples .= "<{$roleMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+                }
             }
-        }
 
-        $sparqlUpdate = "
+            $sparqlUpdate = "
             INSERT DATA {
                 GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
                     {$allTriples}
@@ -629,21 +691,15 @@ class SjabloonController extends Controller
             }
         ";
 
-        // 4. Schiet de data naar GraphDB
-        try {
+            // 4. Schiet de data naar GraphDB
             $this->graphService->update($sparqlUpdate);
+            $graphUpdated = true;
+
             // Automatische SHACL-validatie na write
             $validation = $this->graphService->validateShacl();
-            if (!$validation['conforms']) {
-                // Best-effort rollback van net ingevoegde triples
-                $rollback = "
-                    DELETE DATA {
-                        GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
-                            {$allTriples}
-                        }
-                    }
-                ";
-                $this->graphService->update($rollback);
+            if (! $validation['conforms']) {
+                $this->rollbackGraphTriples($allTriples);
+                DB::rollBack();
 
                 $safeReport = $this->sanitizeForJson((string) ($validation['report'] ?? ''));
 
@@ -652,14 +708,25 @@ class SjabloonController extends Controller
                     'report' => $safeReport,
                 ], 422, [], JSON_INVALID_UTF8_SUBSTITUTE);
             }
-        } catch (\Exception $e) {
+
+            DB::commit();
+        } catch (\Throwable $e) {
+            if ($graphUpdated) {
+                $this->rollbackGraphTriples($allTriples);
+            }
+
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
             $safeMessage = $this->sanitizeForJson($e->getMessage());
             logger()->error('GraphDB update exception', [
                 'message' => $safeMessage,
                 'trace' => $e->getTraceAsString(),
             ]);
+
             return response()->json([
-                'error' => 'GraphDB Update mislukt: ' . $safeMessage,
+                'error' => 'GraphDB Update mislukt: '.$safeMessage,
             ], 500, [], JSON_INVALID_UTF8_SUBSTITUTE);
         }
 
@@ -675,8 +742,8 @@ class SjabloonController extends Controller
     {
         $string = is_string($value) ? $value : json_encode($value);
         $escaped = str_replace(
-            ["\\", "\"", "\n", "\r", "\t"],
-            ["\\\\", "\\\"", "\\n", "\\r", "\\t"],
+            ['\\', '"', "\n", "\r", "\t"],
+            ['\\\\', '\\"', '\\n', '\\r', '\\t'],
             $string ?? ''
         );
 
@@ -689,13 +756,72 @@ class SjabloonController extends Controller
             return '';
         }
 
-        if (!mb_check_encoding($value, 'UTF-8')) {
+        if (! mb_check_encoding($value, 'UTF-8')) {
             $converted = @iconv('UTF-8', 'UTF-8//IGNORE', $value);
             $value = is_string($converted) ? $converted : '';
         }
 
         // Guard against oversized error payloads in API responses.
         return mb_substr($value, 0, 20000);
+    }
+
+    private function rollbackGraphTriples(string $triples): void
+    {
+        if (trim($triples) === '') {
+            return;
+        }
+
+        $rollback = "
+            DELETE DATA {
+                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                    {$triples}
+                }
+            }
+        ";
+
+        try {
+            $this->graphService->update($rollback);
+        } catch (\Throwable $e) {
+            logger()->warning('GraphDB rollback exception', [
+                'message' => $this->sanitizeForJson($e->getMessage()),
+            ]);
+        }
+    }
+
+    private function isAllowedRoleSelection(?string $roleType, ?string $roleSelector, array $allowedSelectors, array $roleShapeRules): bool
+    {
+        foreach ($allowedSelectors as $allowedSelector) {
+            if (! is_string($allowedSelector) || $allowedSelector === '') {
+                continue;
+            }
+
+            if ($roleSelector === $allowedSelector || $roleType === $allowedSelector) {
+                return true;
+            }
+
+            $allowedRule = $this->metadataService->resolveRoleShapeRuleFromSelector($allowedSelector, $roleShapeRules);
+            $allowedRoleType = $allowedRule['rolType'] ?? null;
+
+            if (! is_string($allowedRoleType) || $allowedRoleType === '') {
+                continue;
+            }
+
+            if (is_string($roleType) && $roleType !== '' && $roleType === $allowedRoleType) {
+                return true;
+            }
+
+            if (! is_string($roleSelector) || $roleSelector === '') {
+                continue;
+            }
+
+            $selectedRule = $this->metadataService->resolveRoleShapeRuleFromSelector($roleSelector, $roleShapeRules);
+            $selectedRoleType = $selectedRule['rolType'] ?? null;
+            if (is_string($selectedRoleType) && $selectedRoleType !== '' && $selectedRoleType === $allowedRoleType) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function toSparqlValue(mixed $value, string $type): string
@@ -741,8 +867,8 @@ class SjabloonController extends Controller
     private function toSparqlTypedLiteral(string $value, string $datatypeIri): string
     {
         $escaped = str_replace(
-            ["\\", "\"", "\n", "\r", "\t"],
-            ["\\\\", "\\\"", "\\n", "\\r", "\\t"],
+            ['\\', '"', "\n", "\r", "\t"],
+            ['\\\\', '\\"', '\\n', '\\r', '\\t'],
             $value
         );
 
@@ -758,19 +884,19 @@ class SjabloonController extends Controller
 
         $normalized = str_replace(' ', 'T', $trimmed);
         if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $normalized)) {
-            return $normalized . 'T00:00:00';
+            return $normalized.'T00:00:00';
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/', $normalized)) {
-            return $normalized . ':00';
+            return $normalized.':00';
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}Z$/', $normalized)) {
-            return substr($normalized, 0, 16) . ':00Z';
+            return substr($normalized, 0, 16).':00Z';
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}[+-]\d{2}:\d{2}$/', $normalized)) {
-            return substr($normalized, 0, 16) . ':00' . substr($normalized, 16);
+            return substr($normalized, 0, 16).':00'.substr($normalized, 16);
         }
 
         if (preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?$/', $normalized)) {
@@ -810,7 +936,7 @@ class SjabloonController extends Controller
         $targetClassUri = $row->max_target_class_uri ?? null;
         $maxCount = isset($row->max_target_class_count) ? (int) $row->max_target_class_count : null;
 
-        if (!is_string($targetClassUri) || trim($targetClassUri) === '' || !is_int($maxCount) || $maxCount < 1) {
+        if (! is_string($targetClassUri) || trim($targetClassUri) === '' || ! is_int($maxCount) || $maxCount < 1) {
             return null;
         }
 
@@ -855,16 +981,16 @@ class SjabloonController extends Controller
 
         $idValues = [];
         foreach ($role as $key => $value) {
-            if (!is_string($key) || !str_ends_with($key, 'Id')) {
+            if (! is_string($key) || ! str_ends_with($key, 'Id')) {
                 continue;
             }
-            if (!is_string($value) || $value === '') {
+            if (! is_string($value) || $value === '') {
                 continue;
             }
             $idValues[] = $value;
         }
 
-        if ($fromId === null && !empty($idValues)) {
+        if ($fromId === null && ! empty($idValues)) {
             $fromId = $idValues[0] ?? null;
         }
 

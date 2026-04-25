@@ -9,7 +9,7 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('dossiers', function (Blueprint $table) {
-            if (!Schema::hasColumn('dossiers', 'rdf_uri')) {
+            if (! Schema::hasColumn('dossiers', 'rdf_uri')) {
                 $table->string('rdf_uri')->unique()->after('uuid');
             }
         });

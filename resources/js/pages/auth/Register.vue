@@ -11,7 +11,7 @@ import { home, login } from '@/routes';
 import { store } from '@/routes/register';
 
 defineOptions({
-    layout: null,
+    layout: (page: unknown) => page,
 });
 </script>
 
