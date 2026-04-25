@@ -11,9 +11,10 @@ We gebruiken `Docs/statements.ttl` als export + bronbestand en laden dit terug i
 
 ## Wat staat er in `shapes.ttl`
 
-- Dunne SHACL‑laag met `sh:targetClass` en `sh:property`
-- Alleen minimale validatie + volgorde (`sh:order`)
-- **RolRegels** (mapping van `vwm:RolType` naar rol‑TB metadata)
+- SHACL‑laag met `sh:targetClass` en `sh:property`
+- Validatie + volgorde (`sh:order`)
+- **RoleShapeRules** (mapping van `vwm:RolType` naar rol‑TB metadata via `sh:targetNode`)
+- UI/lookup‑metadata op `sh:property` (bijv. externe lookup voor kenteken → RDW)
 
 ### Regelmodel (RDF)
 
@@ -24,7 +25,7 @@ We gebruiken `Docs/statements.ttl` als export + bronbestand en laden dit terug i
   - `vwm:naarClass`
   - `vwm:predicate`
 
-**RolRegels** (rol‑TB’s genereren)
+**RoleShapeRules** (rol‑TB’s genereren)
 - Bron: SHACL `sh:NodeShape` met `sh:targetNode` op `vwm:RolType_*`
 - Properties:
   - `sh:targetNode` (roltype)
@@ -33,6 +34,14 @@ We gebruiken `Docs/statements.ttl` als export + bronbestand en laden dit terug i
   - `vwm:naarClass`
   - `vwm:vanProperty`
   - `vwm:naarProperty`
+
+**Lookup metadata op PropertyShape** (externe verrijking)
+- `vwm:lookupEndpoint` (API endpoint)
+- `vwm:lookupQueryParam` (query parameter voor bronveld)
+- `vwm:lookupSourceField` (veldnaam uit response voor targetveld)
+- `vwm:lookupTrigger` (`input` of `blur`)
+- `vwm:lookupDebounceMs`
+- `vwm:lookupMinLength`
 
 **RolTypes**
 - Class: `vwm:RolType`
@@ -60,7 +69,9 @@ Dit script synchroniseert SHACL-shapes naar beide graph-contexten:
 
 Laravel leest de regels via SPARQL:
 - `RelatieRegels` → automatisch koppelen van GOIC’s
-- `RolRegels` (uit SHACL) → aanmaken van rol‑TB’s
+- `RoleShapeRules` (uit SHACL) → aanmaken van rol‑TB’s
 - `RolTypes` → mapping van legacy UI keys naar roltype‑URI’s
+- Lookup metadata op `sh:property` → generieke veldverrijking in de UI
+  (o.a. kentekenlookup via `/api/voertuig/kenteken`)
 
-Daarmee bevat de controller geen inhoudelijke domein‑logica meer.
+Daarmee bevat de sjabloon/verwerkingsflow geen hardcoded veldmapping meer; gedrag komt uit RDF/SHACL metadata.
