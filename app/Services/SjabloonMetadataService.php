@@ -410,6 +410,54 @@ class SjabloonMetadataService
         return $map;
     }
 
+    public function fetchIdentityRulesByTbClasses(array $tbClasses): array
+    {
+        $values = array_filter(array_unique(array_values($tbClasses)));
+        if (empty($values)) {
+            return [];
+        }
+
+        $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", $values));
+        $query = "
+            PREFIX sh: <http://www.w3.org/ns/shacl#>
+            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            SELECT ?tbClass ?property ?normalizer ?order
+            WHERE {
+                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
+                    VALUES ?tbClass { {$iriList} }
+                    ?shape a sh:NodeShape ;
+                           sh:targetClass ?tbClass ;
+                           sh:property ?propShape .
+                    ?propShape sh:path ?property ;
+                               vwm:isIdentityKey true .
+                    OPTIONAL { ?propShape vwm:identityNormalizer ?normalizer . }
+                    OPTIONAL { ?propShape sh:order ?order . }
+                }
+            }
+            ORDER BY ?tbClass ?order ?property
+        ";
+
+        $rows = $this->graphService->query($query);
+        $map = [];
+        foreach ($rows as $row) {
+            $tbClass = $row['tbClass'] ?? null;
+            $property = $row['property'] ?? null;
+            if (! is_string($tbClass) || $tbClass === '' || ! is_string($property) || $property === '') {
+                continue;
+            }
+
+            $map[$tbClass][] = [
+                'property' => $property,
+                'normalizer' => is_string($row['normalizer'] ?? null) && $row['normalizer'] !== ''
+                    ? $row['normalizer']
+                    : 'NONE',
+                'order' => isset($row['order']) ? (int) $row['order'] : 999,
+            ];
+        }
+
+        return $map;
+    }
+
     public function fetchRolTypesByKey(): array
     {
         $query = '

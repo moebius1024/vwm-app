@@ -232,5 +232,89 @@ class VwmCoreSeeder extends Seeder
                 'updated_at' => now(),
             ]);
         }
+
+        // 4. Autodiefstal transactie + beschrijvingen (Incident + Voertuig)
+        $autodiefstalTransactieId = DB::table('transactie_soorten')
+            ->where('naam', 'Autodiefstal')
+            ->value('id');
+
+        if (! $autodiefstalTransactieId) {
+            $autodiefstalTransactieId = DB::table('transactie_soorten')->insertGetId([
+                'naam' => 'Autodiefstal',
+                'rdf_uri' => '',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $autodiefstalSjablonen = [
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving', 'volgorde' => 1],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#VoertuigBeschrijving', 'volgorde' => 2],
+        ];
+
+        foreach ($autodiefstalSjablonen as $desc) {
+            $existing = DB::table('transactie_soort_sjabloon')
+                ->where('transactie_soort_id', $autodiefstalTransactieId)
+                ->where('sjabloon_uri', $desc['uri'])
+                ->first();
+
+            if ($existing) {
+                DB::table('transactie_soort_sjabloon')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'type' => 'sjabloon',
+                        'volgorde' => $desc['volgorde'],
+                        'updated_at' => now(),
+                    ]);
+
+                continue;
+            }
+
+            DB::table('transactie_soort_sjabloon')->insert([
+                'transactie_soort_id' => $autodiefstalTransactieId,
+                'sjabloon_uri' => $desc['uri'],
+                'type' => 'sjabloon',
+                'volgorde' => $desc['volgorde'],
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // 4b. CaseSoort Autodiefstal
+        $autodiefstalCaseSoortId = DB::table('case_soorten')
+            ->where('code', 'AD-001')
+            ->value('id');
+
+        if (! $autodiefstalCaseSoortId) {
+            $autodiefstalCaseSoortId = DB::table('case_soorten')->insertGetId([
+                'naam' => 'Autodiefstal',
+                'code' => 'AD-001',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // 4c. Koppel Autodiefstal transactie aan Autodiefstal case-soort
+        $autodiefstalWorkflow = DB::table('case_soort_transactie')
+            ->where('case_soort_id', $autodiefstalCaseSoortId)
+            ->where('transactie_soort_id', $autodiefstalTransactieId)
+            ->first();
+
+        if ($autodiefstalWorkflow) {
+            DB::table('case_soort_transactie')
+                ->where('id', $autodiefstalWorkflow->id)
+                ->update([
+                    'volgorde' => 1,
+                    'updated_at' => now(),
+                ]);
+        } else {
+            DB::table('case_soort_transactie')->insert([
+                'case_soort_id' => $autodiefstalCaseSoortId,
+                'transactie_soort_id' => $autodiefstalTransactieId,
+                'volgorde' => 1,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
     }
 }

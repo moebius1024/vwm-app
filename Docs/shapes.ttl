@@ -70,10 +70,17 @@ vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
     vwm:lookupSourceField "merk" ;
   ] ;
   sh:property [
+    sh:path dpm:model ;
+    sh:datatype xsd:string ;
+    sh:order 3 ;
+    vwm:lookupEndpoint "/api/voertuig/kenteken" ;
+    vwm:lookupSourceField "handelsbenaming" ;
+  ] ;
+  sh:property [
     sh:path dpm:color ;
     sh:datatype xsd:string ;
     sh:minCount 1 ;
-    sh:order 3 ;
+    sh:order 4 ;
     vwm:lookupEndpoint "/api/voertuig/kenteken" ;
     vwm:lookupSourceField "eerste_kleur" ;
   ] ;
@@ -82,11 +89,37 @@ vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
     sh:datatype xsd:string ;
     sh:minCount 1 ;
     sh:order 1 ;
+    vwm:isIdentityKey true ;
+    vwm:identityNormalizer "ALNUM_UPPER" ;
     vwm:lookupEndpoint "/api/voertuig/kenteken" ;
     vwm:lookupQueryParam "kenteken" ;
     vwm:lookupTrigger "input" ;
     vwm:lookupDebounceMs 500 ;
     vwm:lookupMinLength 6 ;
+  ] .
+
+vwm:DataObjectAssociatieBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:DataObjectAssociatieBeschrijving ;
+  sh:property [
+    sh:path dpm:ownedObject ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:targetObject ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:producedAtTime ;
+    sh:datatype xsd:dateTime ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+    sh:order 3 ;
   ] .
 
 vwm:IncidentToestandsWeergaveShape a sh:NodeShape ;
@@ -150,3 +183,4 @@ vwm:RolTypeOmstanderRegelShape a sh:NodeShape ;
   vwm:naarClass dpm:Incident ;
   vwm:vanProperty vwm:heeftPersoon ;
   vwm:naarProperty vwm:heeftIncident .
+

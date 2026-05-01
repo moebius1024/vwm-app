@@ -26,8 +26,17 @@ type GoicItem = {
   id: number;
   rdf_uri: string;
   dossier_id: number;
+  go_uri?: string | null;
+  linked_goic_count?: number;
   created_at: string;
   toestanden: ToestandItem[];
+  follow_info?: {
+    is_followed?: boolean;
+    source_goic_uri?: string | null;
+    source_goic_id?: number | null;
+    source_case_id?: number | null;
+    source_state?: ToestandItem | null;
+  } | null;
 };
 
 type DossierItem = {
@@ -43,6 +52,8 @@ type Props = {
   cases: CaseItem[];
   activeCase?: CaseItem | null;
   dossiers?: DossierItem[];
+  followTargetCaseId?: number | null;
+  goUri?: string | null;
 };
 
 defineOptions({
@@ -65,14 +76,44 @@ const selectedCaseId = ref<number | null>(props.activeCase?.id ?? null);
 const hasSelection = computed(() => !!selectedCaseId.value);
 const labelMap = ref<Record<string, string>>({});
 const goicDisplayMap = ref<Record<string, string>>({});
+const goDisplayMap = ref<Record<string, string>>({});
+const goicDisplayByTail = ref<Record<string, string>>({});
+const remoteGoicDisplayMap = ref<Record<string, string>>({});
 const identifierMap = ref<Record<string, { describedClass: string; properties: string[] }>>({});
+const followBusyGoicId = ref<number | null>(null);
+const followError = ref<string>('');
+const followMessage = ref<string>('');
+
+const hasLinkedGoics = (goic: GoicItem) =>
+  !!goic.go_uri && (goic.linked_goic_count ?? 0) > 1;
+
+const linkedOthersCount = (goic: GoicItem) =>
+  Math.max((goic.linked_goic_count ?? 1) - 1, 1);
+
+const goLinksHref = (goic: GoicItem) => {
+  if (!goic.go_uri) {
+    return '#';
+  }
+
+  const params = new URLSearchParams({ go: goic.go_uri });
+
+  if (props.activeCase?.id) {
+    params.set('case', String(props.activeCase.id));
+  }
+
+  return `/raadplegen/go?${params.toString()}`;
+};
 
 watch(selectedCaseId, (value) => {
   if (!value) {
 return;
 }
 
-  router.get('/raadplegen', { case: value }, { preserveState: true, replace: true });
+  router.get('/raadplegen', {
+    case: value,
+    go: props.goUri ?? undefined,
+    follow_target_case: props.followTargetCaseId ?? undefined,
+  }, { preserveState: true, replace: true });
 });
 
 const isUri = (value: unknown): value is string =>
@@ -204,6 +245,14 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
   return Object.entries(tb.tb_data as Record<string, unknown>);
 };
 
+const hasVisibleTbContent = (tb: ToestandItem, goic: GoicItem) => {
+  return tbEntries(tb).some(([key, value]) => !shouldSkipFieldForGoic(String(key), value, goic));
+};
+
+const visibleToestanden = (goic: GoicItem) => {
+  return goic.toestanden.filter((tb) => hasVisibleTbContent(tb, goic));
+};
+
 const shortId = (uri: string) => {
   const trimmed = uri.endsWith('/') ? uri.slice(0, -1) : uri;
 
@@ -220,6 +269,8 @@ const shortId = (uri: string) => {
 
 const buildGoicDisplayMap = (dossiers: DossierItem[]) => {
   const map: Record<string, string> = {};
+  const goMap: Record<string, string> = {};
+  const tailMap: Record<string, string> = {};
   dossiers.forEach((dossier) => {
     dossier.goics.forEach((goic) => {
       const reversed = [...goic.toestanden].reverse();
@@ -258,10 +309,17 @@ return;
         }
       }
 
-      map[goic.rdf_uri] = identifierValue ? `${classLabel}: ${identifierValue}` : classLabel;
+      const display = identifierValue ? `${classLabel}: ${identifierValue}` : classLabel;
+      map[goic.rdf_uri] = display;
+      tailMap[shortId(goic.rdf_uri)] = display;
+      if (goic.go_uri && !goMap[goic.go_uri]) {
+        goMap[goic.go_uri] = display;
+      }
     });
   });
   goicDisplayMap.value = map;
+  goDisplayMap.value = goMap;
+  goicDisplayByTail.value = tailMap;
 };
 
 const goicClassLabel = (goic: GoicItem) => {
@@ -299,6 +357,68 @@ return null;
   return idConfig?.describedClass ?? null;
 };
 
+const canFollowGoic = (goic: GoicItem) => {
+  if (!props.followTargetCaseId || !props.activeCase?.id) {
+    return false;
+  }
+
+  if (props.activeCase.id === props.followTargetCaseId) {
+    return false;
+  }
+
+  if (goic.follow_info?.is_followed) {
+    return false;
+  }
+
+  const hasVolgbareToestand = goic.toestanden.some((tb) => {
+    const tbClass = tb.tb_class ?? tb.sjabloon_uri ?? null;
+    return typeof tbClass === 'string' && tbClass.length > 0;
+  });
+
+  return hasVolgbareToestand;
+};
+
+const followGoic = async (goic: GoicItem) => {
+  if (!props.followTargetCaseId || !canFollowGoic(goic)) {
+    return;
+  }
+
+  const ok = window.confirm(
+    `Volg GOIC #${goic.id}?\n\n` +
+    '1. Er wordt in jouw case een GOIC aangemaakt met hetzelfde type.\n' +
+    '2. Deze wordt gekoppeld aan dezelfde GO.\n' +
+    '3. DataObjectAssociation wordt vastgelegd.\n' +
+    '4. Stap 1 en 3 worden als ObjectMutatie in SQLite opgeslagen.'
+  );
+  if (!ok) {
+    return;
+  }
+
+  followBusyGoicId.value = goic.id;
+  followError.value = '';
+  followMessage.value = '';
+  try {
+    const response = await axios.post(apiUrl('/api/goic/volg'), {
+      case_id: props.followTargetCaseId,
+      bron_goic_uri: goic.rdf_uri,
+    });
+    followMessage.value = response.data?.message ?? `GOIC wordt nu gevolgd (nieuw GOIC #${response.data?.goic_id ?? '?'})`;
+  } catch (error) {
+    console.error('Fout bij volgen GOIC:', error);
+    if (axios.isAxiosError(error)) {
+      const apiError = error.response?.data?.error;
+      const apiMessage = error.response?.data?.message;
+      const apiReason = error.response?.data?.reason;
+      const reasonText = typeof apiReason === 'string' && apiReason !== '' ? ` (${apiReason})` : '';
+      followError.value = (apiError || apiMessage || 'Volgen van GOIC is mislukt.') + reasonText;
+    } else {
+      followError.value = 'Volgen van GOIC is mislukt.';
+    }
+  } finally {
+    followBusyGoicId.value = null;
+  }
+};
+
 const formatValue = (value: unknown) => {
   if (value === null || value === undefined) {
 return '';
@@ -306,7 +426,12 @@ return '';
 
   if (Array.isArray(value)) {
     return value
-      .map((item) => labelFor(item) ?? goicDisplayMap.value[item as string] ?? (isUri(item) ? shortId(item) : 'Onbekend'))
+      .map((item) => (
+        labelFor(item)
+          ?? goicDisplayMap.value[item as string]
+          ?? remoteGoicDisplayMap.value[item as string]
+          ?? (isUri(item) ? shortId(item) : 'Onbekend')
+      ))
       .join(', ');
   }
 
@@ -317,13 +442,32 @@ return '';
 return goicDisplayMap.value[uri];
 }
 
+    if (remoteGoicDisplayMap.value[uri]) {
+return remoteGoicDisplayMap.value[uri];
+}
+
+    if (goDisplayMap.value[uri]) {
+return goDisplayMap.value[uri];
+}
+
     const label = labelFor(uri);
 
     if (label) {
 return label;
 }
 
+    if (uri.includes('/data/goic/')) {
+      return `GOIC ${shortId(uri)}`;
+    }
+
     return shortId(uri);
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (trimmed !== '' && goicDisplayByTail.value[trimmed]) {
+      return goicDisplayByTail.value[trimmed];
+    }
   }
 
   if (typeof value === 'object') {
@@ -376,6 +520,70 @@ set.add(item);
   return Array.from(set);
 };
 
+const collectUnknownGoicUris = (dossiers: DossierItem[]) => {
+  const known = new Set<string>([
+    ...Object.keys(goicDisplayMap.value),
+    ...Object.keys(remoteGoicDisplayMap.value),
+  ]);
+  const unknown = new Set<string>();
+
+  dossiers.forEach((dossier) => {
+    dossier.goics.forEach((goic) => {
+      const sourceUri = goic.follow_info?.source_goic_uri;
+      if (typeof sourceUri === 'string' && sourceUri.includes('/data/goic/') && !known.has(sourceUri)) {
+        unknown.add(sourceUri);
+      }
+
+      const followState = goic.follow_info?.source_state;
+      if (followState?.tb_data && typeof followState.tb_data === 'object' && !Array.isArray(followState.tb_data)) {
+        Object.values(followState.tb_data).forEach((value) => {
+          if (typeof value === 'string' && value.includes('/data/goic/') && !known.has(value)) {
+            unknown.add(value);
+          }
+
+          if (Array.isArray(value)) {
+            value.forEach((item) => {
+              if (typeof item === 'string' && item.includes('/data/goic/') && !known.has(item)) {
+                unknown.add(item);
+              }
+            });
+          }
+        });
+      }
+
+      goic.toestanden.forEach((tb) => {
+        if (!tb.tb_data || typeof tb.tb_data !== 'object' || Array.isArray(tb.tb_data)) {
+          return;
+        }
+
+        Object.values(tb.tb_data).forEach((value) => {
+          if (typeof value === 'string' && value.includes('/data/goic/') && !known.has(value)) {
+            unknown.add(value);
+          }
+
+          if (Array.isArray(value)) {
+            value.forEach((item) => {
+              if (typeof item === 'string' && item.includes('/data/goic/') && !known.has(item)) {
+                unknown.add(item);
+              }
+            });
+          }
+        });
+      });
+    });
+  });
+
+  return Array.from(unknown);
+};
+
+const apiUrl = (path: string) => {
+  if (typeof window !== 'undefined') {
+    return path;
+  }
+
+  return new URL(path, 'http://localhost').toString();
+};
+
 const loadLabels = async () => {
   if (typeof window === 'undefined') {
     return;
@@ -398,11 +606,11 @@ const loadLabels = async () => {
   }
 
   try {
-    let labelsResponse = await axios.post('/api/labels', { uris });
+    let labelsResponse = await axios.post(apiUrl('/api/labels'), { uris });
     let labels = labelsResponse.data.labels ?? {};
 
     if (!Object.keys(labels).length) {
-      labelsResponse = await axios.get('/api/labels');
+      labelsResponse = await axios.get(apiUrl('/api/labels'));
       labels = labelsResponse.data.labels ?? {};
     }
 
@@ -413,7 +621,7 @@ const loadLabels = async () => {
   }
 
   try {
-    const identifiersResponse = await axios.get('/api/identifiers');
+    const identifiersResponse = await axios.get(apiUrl('/api/identifiers'));
     const list = identifiersResponse.data.identifiers ?? [];
     const map: Record<string, { describedClass: string; properties: string[] }> = {};
     list.forEach((row: { tb_class: string; described_class: string; properties: string[] }) => {
@@ -431,6 +639,19 @@ const loadLabels = async () => {
   }
 
   buildGoicDisplayMap(props.dossiers);
+
+  try {
+    const unknownGoicUris = collectUnknownGoicUris(props.dossiers);
+    if (unknownGoicUris.length > 0) {
+      const response = await axios.post(apiUrl('/api/goic/displays'), { uris: unknownGoicUris });
+      remoteGoicDisplayMap.value = {
+        ...remoteGoicDisplayMap.value,
+        ...(response.data.labels ?? {}),
+      };
+    }
+  } catch (error) {
+    console.error('Fout bij ophalen GOIC-weergaves:', error);
+  }
 };
 
 watch(() => props.dossiers, () => {
@@ -487,6 +708,13 @@ watch(() => props.dossiers, () => {
         </div>
 
         <div v-else class="space-y-6">
+          <div v-if="followMessage" class="rounded-lg border border-emerald-300 bg-emerald-50 px-4 py-2 text-sm text-emerald-800 dark:border-emerald-500/40 dark:bg-emerald-900/30 dark:text-emerald-100">
+            {{ followMessage }}
+          </div>
+          <div v-if="followError" class="rounded-lg border border-rose-300 bg-rose-50 px-4 py-2 text-sm text-rose-800 dark:border-rose-500/40 dark:bg-rose-900/30 dark:text-rose-100">
+            {{ followError }}
+          </div>
+
           <div v-if="activeCase" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
             Actieve case: {{ activeCase.case_soort_naam }} ({{ activeCase.case_soort_code }}) · #{{ activeCase.id }}
           </div>
@@ -499,12 +727,52 @@ watch(() => props.dossiers, () => {
 
               <div v-if="dossier.goics.length" class="mt-4 space-y-3">
                 <div v-for="goic in dossier.goics" :key="goic.id" class="rounded-lg border border-gray-100 bg-gray-50 p-4 dark:border-gray-700 dark:bg-gray-800">
+                  <div class="flex flex-wrap items-start justify-between gap-3">
                     <div class="text-sm font-medium text-gray-800 dark:text-gray-200">
                       GOIC #{{ goic.id }}<span v-if="goicClassLabel(goic)"> · {{ goicClassLabel(goic) }}</span>
                     </div>
+                    <Link
+                      v-if="hasLinkedGoics(goic)"
+                      :href="goLinksHref(goic)"
+                      class="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800 transition hover:bg-indigo-100 dark:border-indigo-300/30 dark:bg-indigo-900/30 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
+                    >
+                      Andere GOIC's binnen GO ({{ linkedOthersCount(goic) }})
+                    </Link>
+                    <button
+                      v-if="canFollowGoic(goic)"
+                      type="button"
+                      class="inline-flex items-center rounded-md border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-800 transition hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-amber-300/30 dark:bg-amber-900/30 dark:text-amber-100 dark:hover:bg-amber-900/50"
+                      :disabled="followBusyGoicId === goic.id"
+                      @click="followGoic(goic)"
+                    >
+                      {{ followBusyGoicId === goic.id ? 'Bezig...' : 'Volg deze GOIC' }}
+                    </button>
+                  </div>
 
-                  <div v-if="goic.toestanden.length" class="mt-3 space-y-2">
-                    <div v-for="tb in goic.toestanden" :key="tb.mutatie_id" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
+                  <div v-if="visibleToestanden(goic).length || (goic.follow_info?.is_followed && goic.follow_info.source_state)" class="mt-3 space-y-2">
+                    <div
+                      v-if="goic.follow_info?.is_followed && goic.follow_info.source_state"
+                      class="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 text-xs text-indigo-900 dark:border-indigo-400/30 dark:bg-indigo-900/20 dark:text-indigo-100"
+                    >
+                      <div class="font-semibold">
+                        Gevolgde GOIC · Verwijst naar GOIC #{{ goic.follow_info.source_goic_id ?? '?' }}
+                        <span v-if="goic.follow_info.source_case_id">in case #{{ goic.follow_info.source_case_id }}</span>
+                      </div>
+                      <div class="mt-2 text-[11px] opacity-90">Alleen raadplegen: deze toestandsbeschrijving komt uit de gekoppelde GOIC.</div>
+                      <div class="mt-2 rounded border border-indigo-200 bg-white p-2 dark:border-indigo-400/30 dark:bg-gray-900">
+                        <template
+                          v-for="([key, value]) in tbEntries(goic.follow_info.source_state)"
+                          :key="`follow-${goic.id}-${String(key)}`"
+                        >
+                          <div class="flex flex-wrap items-start gap-2">
+                            <span class="min-w-[180px] font-medium">{{ fieldLabelFor(String(key)) || 'Onbekend veld' }}</span>
+                            <span class="break-all">{{ formatValue(value) }}</span>
+                          </div>
+                        </template>
+                      </div>
+                    </div>
+
+                    <div v-for="tb in visibleToestanden(goic)" :key="tb.mutatie_id" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
                       <div v-if="tbEntries(tb).length" class="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-200">
                         <template v-for="([key, value]) in tbEntries(tb)" :key="key">
                           <div
@@ -520,7 +788,6 @@ watch(() => props.dossiers, () => {
                           </div>
                         </template>
                       </div>
-                      <pre v-else class="mt-2 overflow-x-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ formatValue(tb.tb_data) }}</pre>
                     </div>
                   </div>
                   <div v-else class="mt-2 text-xs text-gray-500 dark:text-gray-400">

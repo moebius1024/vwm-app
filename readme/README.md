@@ -43,6 +43,10 @@ We gebruiken `Docs/statements.ttl` als export + bronbestand en laden dit terug i
 - `vwm:lookupDebounceMs`
 - `vwm:lookupMinLength`
 
+**Identity metadata op PropertyShape** (GO-hergebruik / deduplicatie)
+- `vwm:isIdentityKey true` (veld telt mee als identity-key)
+- `vwm:identityNormalizer` (normalisatie-strategie, bijv. `ALNUM_UPPER`)
+
 **RolTypes**
 - Class: `vwm:RolType`
 - Extra property: `vwm:roleKey` (legacy key vanuit de UI, bijv. `drivers`, `owners`, `witnesses`, `bystanders`)
@@ -65,6 +69,31 @@ Dit script synchroniseert SHACL-shapes naar beide graph-contexten:
 - `http://vwm.voorbeeld.nl/model/ontologie` (voor UI-metadatasqueries)
 - `http://rdf4j.org/schema/rdf4j#SHACLShapeGraph` (voor GraphDB SHACL-validatie)
 
+## Bestaande voertuigen normaliseren op kenteken
+
+Voor bestaande data kun je voertuig-GOIC’s met hetzelfde kenteken aan dezelfde GO koppelen:
+
+```bash
+php scripts/normalize_vehicle_go_by_license_plate.php
+```
+
+Dit is een **dry-run** en laat alleen zien wat er aangepast zou worden.
+Toepassen doe je met:
+
+```bash
+php scripts/normalize_vehicle_go_by_license_plate.php --apply
+```
+
+## Historische `toestand_data` opschonen in SQLite
+
+Standaard schrijft de app nu geen inhoud meer naar `toestands_beschrijvingen.toestand_data`.
+Bestaande inhoud kun je optioneel opschonen met:
+
+```bash
+php scripts/clear_toestand_data_sqlite.php
+php scripts/clear_toestand_data_sqlite.php --apply
+```
+
 ## Gebruik in de app
 
 Laravel leest de regels via SPARQL:
@@ -73,5 +102,11 @@ Laravel leest de regels via SPARQL:
 - `RolTypes` → mapping van legacy UI keys naar roltype‑URI’s
 - Lookup metadata op `sh:property` → generieke veldverrijking in de UI
   (o.a. kentekenlookup via `/api/voertuig/kenteken`)
+- Identity metadata op `sh:property` → generiek hergebruik van bestaande GO’s
+  (`vwm:beschrijftGO`) op basis van SHACL-configuratie, zonder hardcoded domeinklasse
+- In SQLite bewaren we bij `toestands_beschrijvingen` alleen de verwijzing naar TB
+  (`uuid`/`rdf_uri`/`beschrijving`); inhoudelijke toestand staat in GraphDB
+  en mutatiepayload blijft in `object_mutaties.data` alleen als audit-snapshot
+  (niet actief bevraagd voor inhoudelijke applicatielogica)
 
 Daarmee bevat de sjabloon/verwerkingsflow geen hardcoded veldmapping meer; gedrag komt uit RDF/SHACL metadata.

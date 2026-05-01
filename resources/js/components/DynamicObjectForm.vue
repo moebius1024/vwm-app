@@ -462,9 +462,17 @@ const onFieldBlur = (object: ObjectBlock, veld: Veld) => {
   void triggerMetadataLookup(object, veld, 'blur');
 };
 
+const apiUrl = (path: string) => {
+  if (typeof window !== 'undefined') {
+    return path;
+  }
+
+  return new URL(path, 'http://localhost').toString();
+};
+
 const loadIdentifiers = async () => {
   try {
-    const response = await axios.get('/api/identifiers');
+    const response = await axios.get(apiUrl('/api/identifiers'));
     const rows = (response.data.identifiers ?? []) as IdentifierItem[];
     const map: Record<string, { describedClass: string; properties: string[] }> = {};
     rows.forEach((row) => {
@@ -525,7 +533,7 @@ const initObject = (sjabloon: SjabloonResponse): ObjectBlock => {
 
 const loadSjabloonByUri = async (uri: string): Promise<SjabloonResponse | null> => {
   try {
-    const response = await axios.get('/api/sjabloon/uri', { params: { uri } });
+    const response = await axios.get(apiUrl('/api/sjabloon/uri'), { params: { uri } });
 
     return response.data as SjabloonResponse;
   } catch (error) {
@@ -614,7 +622,7 @@ const uploadFile = async (object: ObjectBlock, veld: Veld, file: File) => {
   formData.append('file', file);
 
   try {
-    const response = await axios.post('/api/bestand/upload', formData, {
+    const response = await axios.post(apiUrl('/api/bestand/upload'), formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -908,7 +916,7 @@ return;
       },
     };
     
-    const response = await axios.post('/api/mutatie', payload);
+    const response = await axios.post(apiUrl('/api/mutatie'), payload);
     alert('Succes! Object aangemaakt.');
     console.log('Response:', response.data);
     emit('saved');

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, router } from '@inertiajs/vue3';
-import { ref } from 'vue';
+import { computed, ref } from 'vue';
 import CaseConsultPanel from '@/components/CaseConsultPanel.vue';
 import DynamicObjectForm from '@/components/DynamicObjectForm.vue';
 import { start } from '@/routes/cases';
@@ -27,6 +27,8 @@ type Props = {
       id: number;
       rdf_uri: string;
       dossier_id: number;
+      go_uri?: string | null;
+      linked_goic_count?: number;
       created_at: string;
       toestanden: {
         mutatie_id: number;
@@ -58,6 +60,17 @@ defineOptions({
 
 const props = defineProps<Props>();
 const selectedTransactieId = ref<number | null>(props.transactieSoorten?.[0]?.id ?? null);
+const caseTitle = computed(() => {
+  if (props.activeCase?.id && props.activeCase.case_soort_naam) {
+    return `Case ${props.activeCase.case_soort_naam} #${props.activeCase.id} bewerken`;
+  }
+
+  if (props.caseId) {
+    return `Case #${props.caseId} bewerken`;
+  }
+
+  return 'Case bewerken';
+});
 
 const refreshDossiers = () => {
   router.reload({ only: ['dossiers'] });
@@ -70,7 +83,7 @@ const refreshDossiers = () => {
   <div class="flex h-full flex-1 flex-col gap-6 rounded-xl p-4">
     <div class="rounded-2xl border border-sidebar-border/70 bg-gradient-to-br from-white via-white to-amber-50 px-6 py-5 shadow-sm dark:border-sidebar-border dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
       <div class="flex flex-col gap-1">
-        <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">Case bewerken</h1>
+        <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ caseTitle }}</h1>
         <p class="text-sm text-gray-600 dark:text-gray-300">
           Registreer nieuwe gegevens en raadpleeg bestaande inhoud in dezelfde case.
         </p>
@@ -102,7 +115,7 @@ const refreshDossiers = () => {
           <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Raadplegen</h2>
           <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">Bekijk de bestaande inhoud van deze case.</p>
         </div>
-        <CaseConsultPanel :dossiers="dossiers" :transactie-soort-id="selectedTransactieId" />
+        <CaseConsultPanel :dossiers="dossiers" :transactie-soort-id="selectedTransactieId" :case-id="caseId" />
       </div>
     </div>
 
