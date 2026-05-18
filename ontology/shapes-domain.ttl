@@ -1,0 +1,236 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix vwm: <http://ontologie.politie.nl/def/vwm#> .
+@prefix dpm: <http://ontologie.politie.nl/def/dpm#> .
+@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
+
+vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonsBeschrijving ;
+  sh:property [
+    sh:path dpm:lastName ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:bsn ;
+    sh:datatype xsd:integer ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:birthDate ;
+    sh:datatype xsd:date ;
+    sh:minCount 1 ;
+    sh:order 3 ;
+  ] .
+
+vwm:IncidentBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:IncidentBeschrijving ;
+  sh:property [
+    sh:path dpm:location ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:timestamp ;
+    sh:datatype xsd:dateTime ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:OndernemingsBeschrijving ;
+  sh:property [
+    sh:path dpm:name ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:legalForm ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:otherLegalForm ;
+    sh:datatype xsd:string ;
+    sh:order 3 ;
+  ] .
+
+vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:VoertuigBeschrijving ;
+  sh:property [
+    sh:path dpm:brand ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:model ;
+    sh:datatype xsd:string ;
+    sh:order 3 ;
+  ] ;
+  sh:property [
+    sh:path dpm:color ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 4 ;
+  ] ;
+  sh:property [
+    sh:path dpm:licensePlate ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+    vwm:isIdentityKey true ;
+    vwm:identityNormalizer "ALNUM_UPPER" ;
+  ] .
+
+vwm:IncidentToestandsWeergaveShape a sh:NodeShape ;
+  sh:targetClass vwm:IncidentToestandsWeergave ;
+  sh:property [
+    sh:path vwm:beschrijving ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path vwm:heeftBestand ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:PersoonToestandsWeergaveShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonToestandsWeergave ;
+  sh:property [
+    sh:path vwm:beschrijving ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path vwm:heeftBestand ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:PersoonSignalementShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonSignalement ;
+  sh:property [
+    sh:path vwm:heeftBronGOIC ;
+    sh:nodeKind sh:IRI ;
+    sh:class vwm:GegevensObjectInContext ;
+    sh:maxCount 1 ;
+    sh:order 0 ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedGender ;
+    sh:datatype xsd:string ;
+    sh:in ( "Man" "Vrouw" "Onbekend" ) ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedAgeMin ;
+    sh:datatype xsd:integer ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedAgeMax ;
+    sh:datatype xsd:integer ;
+    sh:minCount 1 ;
+    sh:order 3 ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedHeightCm ;
+    sh:datatype xsd:integer ;
+    sh:minCount 1 ;
+    sh:order 4 ;
+  ] ;
+  sh:property [
+    sh:path dpm:bodyBuild ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 5 ;
+  ] ;
+  sh:property [
+    sh:path dpm:skinTone ;
+    sh:datatype xsd:string ;
+    sh:in ( "Licht" "Getint" "Donker" ) ;
+    sh:minCount 1 ;
+    sh:order 6 ;
+  ] ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "Leeftijd van moet kleiner dan of gelijk aan leeftijd tot zijn." ;
+    sh:select """
+      PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+      SELECT $this
+      WHERE {
+        $this dpm:estimatedAgeMin ?min ;
+              dpm:estimatedAgeMax ?max .
+        FILTER (?min > ?max)
+      }
+    """ ;
+  ] ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "Actief PersoonSignalement moet een bron (heeftBronGOIC) hebben." ;
+    sh:select """
+      PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+      PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+      SELECT $this
+      WHERE {
+        FILTER NOT EXISTS { $this dpm:invalidatedAtTime ?invalidatedAt . }
+        FILTER NOT EXISTS { $this vwm:heeftBronGOIC ?bronGoic . }
+      }
+    """ ;
+  ] ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "Bron voor PersoonSignalement moet een GOIC van een Persoon zijn." ;
+    sh:select """
+      PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+      PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+      SELECT $this
+      WHERE {
+        FILTER NOT EXISTS { $this dpm:invalidatedAtTime ?invalidatedAt . }
+        $this vwm:heeftBronGOIC ?bronGoic .
+        FILTER NOT EXISTS {
+          ?tb vwm:beschrijftGOIC ?bronGoic ;
+              a ?tbClass .
+          ?tbClass vwm:beschrijftClass dpm:Person .
+          FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+        }
+      }
+    """ ;
+  ] .
+
+vwm:VerkeersincidentDossierMaxOneIncidentShape a sh:NodeShape ;
+  sh:targetClass vwm:VerkeersincidentDossier ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "Binnen een Verkeersincident-dossier is maximaal 1 Incident GOIC toegestaan." ;
+    sh:select """
+      PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+      PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+      SELECT $this
+      WHERE {
+        {
+          SELECT $this (COUNT(DISTINCT ?goic) AS ?incidentCount)
+          WHERE {
+            ?goic vwm:hoortBijDossier $this .
+            ?tb a vwm:IncidentBeschrijving ;
+                vwm:beschrijftGOIC ?goic .
+            FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+          }
+          GROUP BY $this
+          HAVING (?incidentCount > 1)
+        }
+      }
+    """ ;
+  ] .

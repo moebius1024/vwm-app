@@ -1,0 +1,419 @@
+<http://ontologie.politie.nl/def/dpm#Incident> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Incident"@nl .
+
+<http://ontologie.politie.nl/def/dpm#Onderneming> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Onderneming"@nl .
+
+<http://ontologie.politie.nl/def/dpm#Person> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#comment> "Een individu in de context van een onderzoek.";
+  <http://www.w3.org/2000/01/rdf-schema#label> "Persoon"@nl .
+
+<http://ontologie.politie.nl/def/dpm#Vehicle> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Voertuig"@nl .
+
+<http://ontologie.politie.nl/def/dpm#DataObjectAssociation> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "DataObjectAssociation"@nl .
+
+
+<http://ontologie.politie.nl/def/dpm#birthDate> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Geboortedatum";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#date> .
+
+<http://ontologie.politie.nl/def/dpm#brand> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Vehicle>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Merk";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#bsn> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://ontologie.politie.nl/def/vwm#isIdentifier> "true"^^<http://www.w3.org/2001/XMLSchema#boolean>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "BSN";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#integer> .
+
+<http://ontologie.politie.nl/def/dpm#color> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Vehicle>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Kleur";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#lastName> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://ontologie.politie.nl/def/vwm#isIdentifier> "true"^^<http://www.w3.org/2001/XMLSchema#boolean>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Achternaam";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#estimatedGender> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Geslacht";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#estimatedAgeMin> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Leeftijd van";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#integer> .
+
+<http://ontologie.politie.nl/def/dpm#estimatedAgeMax> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Leeftijd tot";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#integer> .
+
+<http://ontologie.politie.nl/def/dpm#estimatedHeightCm> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Lengte (cm)";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#integer> .
+
+<http://ontologie.politie.nl/def/dpm#bodyBuild> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Postuur";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#skinTone> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Huidskleur";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#licensePlate> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Vehicle>;
+  <http://ontologie.politie.nl/def/vwm#isIdentifier> "true"^^<http://www.w3.org/2001/XMLSchema#boolean>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Kenteken";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#model> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Vehicle>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Model";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#legalForm> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Onderneming>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Rechtsvorm";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#location> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Incident>;
+  <http://ontologie.politie.nl/def/vwm#isIdentifier> "true"^^<http://www.w3.org/2001/XMLSchema#boolean>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Locatie";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#name> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Onderneming>;
+  <http://ontologie.politie.nl/def/vwm#isIdentifier> "true"^^<http://www.w3.org/2001/XMLSchema#boolean>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Naam";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#otherLegalForm> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Onderneming>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "AndereRechtsvorm";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#timestamp> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Incident>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Tijdstip";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime> .
+
+<http://ontologie.politie.nl/def/vwm#GegevensObject> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "GegevensObject" .
+
+<http://ontologie.politie.nl/def/vwm#GegevensObjectInContext> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "GegevensObjectInContext" .
+
+<http://ontologie.politie.nl/def/vwm#IncidentBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Incident>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Incident";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#ObjectMutatie> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "ObjectMutatie" .
+
+<http://ontologie.politie.nl/def/vwm#OndernemingsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Onderneming>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Onderneming";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Persoon";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#PersoonSignalement> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "PersoonSignalement";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "ToestandsBeschrijving" .
+
+<http://ontologie.politie.nl/def/vwm#ToestandsWeergave> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Bestand";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#IncidentToestandsWeergave> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Incident>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "IncidentBestand";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsWeergave> .
+
+<http://ontologie.politie.nl/def/vwm#PersoonToestandsWeergave> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "PersoonBestand";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsWeergave> .
+
+<http://ontologie.politie.nl/def/vwm#Bestand> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Bestand";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#GegevensObject> .
+
+<http://ontologie.politie.nl/def/vwm#PersoonIncidentRol> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "PersoonIncidentRol";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#RolBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#PersoonVoertuigRol> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "PersoonVoertuigRol";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#RolBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#RolBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "RolBeschrijving";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#RolType> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "RolType" .
+
+<http://ontologie.politie.nl/def/vwm#RolType_Bestuurder> a <http://ontologie.politie.nl/def/vwm#RolType>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Bestuurder";
+  <http://ontologie.politie.nl/def/vwm#roleKey> "drivers" .
+
+<http://ontologie.politie.nl/def/vwm#RolType_Eigenaar> a <http://ontologie.politie.nl/def/vwm#RolType>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Eigenaar";
+  <http://ontologie.politie.nl/def/vwm#roleKey> "owners" .
+
+<http://ontologie.politie.nl/def/vwm#RolType_Getuige> a <http://ontologie.politie.nl/def/vwm#RolType>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Getuige";
+  <http://ontologie.politie.nl/def/vwm#roleKey> "witnesses" .
+
+<http://ontologie.politie.nl/def/vwm#RolType_Omstander> a <http://ontologie.politie.nl/def/vwm#RolType>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Omstander";
+  <http://ontologie.politie.nl/def/vwm#roleKey> "bystanders" .
+
+<http://ontologie.politie.nl/def/vwm#RolType_Verdachte> a <http://ontologie.politie.nl/def/vwm#RolType>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Verdachte";
+  <http://ontologie.politie.nl/def/vwm#roleKey> "suspects" .
+
+<http://ontologie.politie.nl/def/vwm#Rol_Bestuurder> <http://www.w3.org/2000/01/rdf-schema#label> "Bestuurder" .
+
+<http://ontologie.politie.nl/def/vwm#Rol_Eigenaar> <http://www.w3.org/2000/01/rdf-schema#label> "Eigenaar" .
+
+<http://ontologie.politie.nl/def/vwm#Rol_Getuige> <http://www.w3.org/2000/01/rdf-schema#label> "Getuige" .
+
+<http://ontologie.politie.nl/def/vwm#Rol_Omstander> <http://www.w3.org/2000/01/rdf-schema#label> "Omstander" .
+
+<http://ontologie.politie.nl/def/vwm#Rol_Verdachte> <http://www.w3.org/2000/01/rdf-schema#label> "Verdachte" .
+
+<http://ontologie.politie.nl/def/vwm#RelatieRegel> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "RelatieRegel" .
+
+<http://ontologie.politie.nl/def/vwm#vanClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "vanClass" .
+
+<http://ontologie.politie.nl/def/vwm#naarClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "naarClass" .
+
+<http://ontologie.politie.nl/def/vwm#predicate> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "predicate" .
+
+<http://ontologie.politie.nl/def/vwm#rolType> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "rolType" .
+
+<http://ontologie.politie.nl/def/vwm#rolTbClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "rolTbClass" .
+
+<http://ontologie.politie.nl/def/vwm#vanProperty> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "vanProperty" .
+
+<http://ontologie.politie.nl/def/vwm#naarProperty> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "naarProperty" .
+
+<http://ontologie.politie.nl/def/vwm#autoRoleForTbClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "autoRoleForTbClass" .
+
+<http://ontologie.politie.nl/def/vwm#autoRoleType> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "autoRoleType" .
+
+<http://ontologie.politie.nl/def/vwm#autoInvalidateRoleForTbClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "autoInvalidateRoleForTbClass" .
+
+<http://ontologie.politie.nl/def/vwm#autoInvalidateRoleType> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "autoInvalidateRoleType" .
+
+<http://ontologie.politie.nl/def/vwm#roleKey> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "roleKey" .
+
+<http://ontologie.politie.nl/def/vwm#isIdentityKey> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "isIdentityKey" .
+
+<http://ontologie.politie.nl/def/vwm#identityNormalizer> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "identityNormalizer" .
+
+<http://ontologie.politie.nl/def/vwm#isIdentifier> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "isIdentifier" .
+
+<http://ontologie.politie.nl/def/vwm#RelatieRegel_Incident_Persoon> a <http://ontologie.politie.nl/def/vwm#RelatieRegel>;
+  <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Incident>;
+  <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://ontologie.politie.nl/def/vwm#predicate> <http://ontologie.politie.nl/def/dpm#involvesPerson> .
+
+<http://ontologie.politie.nl/def/vwm#RelatieRegel_Incident_Voertuig> a <http://ontologie.politie.nl/def/vwm#RelatieRegel>;
+  <http://ontologie.politie.nl/def/vwm#vanClass> <http://ontologie.politie.nl/def/dpm#Incident>;
+  <http://ontologie.politie.nl/def/vwm#naarClass> <http://ontologie.politie.nl/def/dpm#Vehicle>;
+  <http://ontologie.politie.nl/def/vwm#predicate> <http://ontologie.politie.nl/def/dpm#involvesVehicle> .
+
+<http://ontologie.politie.nl/def/vwm#heeftPersoon> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#RolBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "heeftPersoon" .
+
+<http://ontologie.politie.nl/def/vwm#heeftVoertuig> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#PersoonVoertuigRol>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "heeftVoertuig" .
+
+<http://ontologie.politie.nl/def/vwm#heeftIncident> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#PersoonIncidentRol>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "heeftIncident" .
+
+<http://ontologie.politie.nl/def/vwm#rolType> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#RolBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#RolType>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "rolType" .
+
+<http://ontologie.politie.nl/def/vwm#VoertuigBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Vehicle>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Voertuig";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "VerkeersincidentDossier" .
+
+<http://ontologie.politie.nl/def/vwm#beschrijftClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2002/07/owl#Class> .
+
+<http://ontologie.politie.nl/def/vwm#beschrijftGO> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObject> .
+
+<http://ontologie.politie.nl/def/vwm#hoortBijDossier> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "hoortBijDossier" .
+
+<http://ontologie.politie.nl/def/vwm#beschrijftGOIC> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext> .
+
+<http://ontologie.politie.nl/def/vwm#heeftBronGOIC> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Heeft Bron" .
+
+<http://ontologie.politie.nl/def/vwm#heeftBestand> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsWeergave>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#Bestand>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "heeftBestand" .
+
+<http://ontologie.politie.nl/def/vwm#beschrijving> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsWeergave>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Beschrijving";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/vwm#mediaType> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#Bestand>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "MediaType";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/vwm#bestandsnaam> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#Bestand>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Bestandsnaam";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/vwm#externeOpslagIdentificatie> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#Bestand>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "ExterneOpslagIdentificatie";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/vwm#datumTijd> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ObjectMutatie>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime> .
+
+<http://ontologie.politie.nl/def/vwm#geregistreerdOp> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "geregistreerdOp";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime> .
+
+<http://ontologie.politie.nl/def/vwm#heeftBetrekkingOp> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ObjectMutatie>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext> .
+
+<http://ontologie.politie.nl/def/vwm#logischVerwijderdOp> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "logischVerwijderdOp";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime> .
+
+<http://ontologie.politie.nl/def/vwm#produceert> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ObjectMutatie>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#verwijdertLogisch> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ObjectMutatie>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+
+<http://ontologie.politie.nl/def/dpm#ownedObject> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "ownedObject" .
+
+<http://ontologie.politie.nl/def/dpm#targetObject> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "targetObject" .
+
+<http://ontologie.politie.nl/def/dpm#producedAtTime> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "producedAtTime" .
+
+<http://ontologie.politie.nl/def/dpm#invalidatedAtTime> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "invalidatedAtTime" .
+
+<http://ontologie.politie.nl/def/ui#lookupEndpoint> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupEndpoint" .
+
+<http://ontologie.politie.nl/def/ui#lookupQueryParam> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupQueryParam" .
+
+<http://ontologie.politie.nl/def/ui#lookupSourceField> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupSourceField" .
+
+<http://ontologie.politie.nl/def/ui#lookupTrigger> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupTrigger" .
+
+<http://ontologie.politie.nl/def/ui#lookupDebounceMs> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupDebounceMs" .
+
+<http://ontologie.politie.nl/def/ui#lookupMinLength> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupMinLength" .
+
+<http://ontologie.politie.nl/def/ui#lookupClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "lookupClass" .
+
+<http://ontologie.politie.nl/def/ui#fieldWidth> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://www.w3.org/ns/shacl#PropertyShape>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "fieldWidth" .

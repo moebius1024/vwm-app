@@ -1,0 +1,43 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix vwm: <http://ontologie.politie.nl/def/vwm#> .
+@prefix dpm: <http://ontologie.politie.nl/def/dpm#> .
+
+vwm:RolTypeBestuurderRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Bestuurder ;
+  vwm:rolTbClass vwm:PersoonVoertuigRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Vehicle ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftVoertuig .
+
+vwm:RolTypeEigenaarRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Eigenaar ;
+  vwm:rolTbClass vwm:PersoonVoertuigRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Vehicle ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftVoertuig .
+
+vwm:RolTypeGetuigeRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Getuige ;
+  vwm:rolTbClass vwm:PersoonIncidentRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Incident ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftIncident .
+
+vwm:RolTypeOmstanderRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Omstander ;
+  vwm:rolTbClass vwm:PersoonIncidentRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Incident ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftIncident .
+
+vwm:RolTypeVerdachteRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Verdachte ;
+  vwm:rolTbClass vwm:PersoonIncidentRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Incident ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftIncident .

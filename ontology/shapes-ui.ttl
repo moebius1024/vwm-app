@@ -1,0 +1,61 @@
+@prefix sh: <http://www.w3.org/ns/shacl#> .
+@prefix vwm: <http://ontologie.politie.nl/def/vwm#> .
+@prefix ui: <http://ontologie.politie.nl/def/ui#> .
+@prefix dpm: <http://ontologie.politie.nl/def/dpm#> .
+
+# UI-only metadata extract (screen hints) as separate graph.
+# Keep this file focused on application rendering metadata.
+
+vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:VoertuigBeschrijving ;
+  sh:property [
+    sh:path dpm:brand ;
+    ui:lookupEndpoint "/api/voertuig/kenteken" ;
+    ui:lookupSourceField "merk" ;
+  ] ;
+  sh:property [
+    sh:path dpm:model ;
+    ui:lookupEndpoint "/api/voertuig/kenteken" ;
+    ui:lookupSourceField "handelsbenaming" ;
+  ] ;
+  sh:property [
+    sh:path dpm:color ;
+    ui:lookupEndpoint "/api/voertuig/kenteken" ;
+    ui:lookupSourceField "eerste_kleur" ;
+  ] ;
+  sh:property [
+    sh:path dpm:licensePlate ;
+    ui:lookupEndpoint "/api/voertuig/kenteken" ;
+    ui:lookupQueryParam "kenteken" ;
+    ui:lookupTrigger "input" ;
+    ui:lookupDebounceMs 500 ;
+    ui:lookupMinLength 6 ;
+  ] .
+
+vwm:PersoonSignalementShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonSignalement ;
+  sh:property [
+    sh:path vwm:heeftBronGOIC ;
+    ui:lookupClass dpm:Person ;
+    ui:fieldWidth "lg" ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedGender ;
+    ui:fieldWidth "sm" ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedAgeMin ;
+    ui:fieldWidth "sm" ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedAgeMax ;
+    ui:fieldWidth "sm" ;
+  ] ;
+  sh:property [
+    sh:path dpm:estimatedHeightCm ;
+    ui:fieldWidth "sm" ;
+  ] ;
+  sh:property [
+    sh:path dpm:skinTone ;
+    ui:fieldWidth "sm" ;
+  ] .

@@ -1,7 +1,26 @@
 # VWM Ontologie & Regels (GraphDB)
 
 Deze map bevat de “bron van waarheid” voor de ontologie en het regelmodel.
-We gebruiken `Docs/statements.ttl` als export + bronbestand en laden dit terug in GraphDB.
+We gebruiken de bestanden in `ontology/` als bron en laden die terug in GraphDB.
+
+## Bestandslocaties (actueel)
+
+- `ontology/statements.ttl` → ontologie/triples (classes, properties, labels, beschrijftClass)
+- `ontology/shapes-domain.ttl` → domein-shapes (sjablonen en velddefinities)
+- `ontology/shapes-process.ttl` → proces-shapes (rolregels e.d.)
+- `ontology/shapes-ui.ttl` → UI-only metadata (lookup hints)
+- `ontology/shapes.ttl` → gecombineerde shape-set (o.a. voor SHACLShapeGraph)
+
+## Harde scheidingsregel (Do / Don't)
+
+Do:
+- Zet **alleen** UI-metadata (`ui:*`, zoals `ui:lookup*`, `ui:fieldWidth`) in `ontology/shapes-ui.ttl`.
+- Zet domeinconstraints (`sh:datatype`, `sh:minCount`, `sh:in`, semantische regels) in `ontology/shapes-domain.ttl`.
+- Zet proces/rolregels in `ontology/shapes-process.ttl`.
+
+Don't:
+- Geen `ui:*` metadata toevoegen in `shapes-domain.ttl` of `shapes-process.ttl`.
+- Geen domein- of proceslogica toevoegen in `shapes-ui.ttl`.
 
 ## Wat staat er in `statements.ttl`
 
@@ -13,35 +32,29 @@ We gebruiken `Docs/statements.ttl` als export + bronbestand en laden dit terug i
 
 - SHACL‑laag met `sh:targetClass` en `sh:property`
 - Validatie + volgorde (`sh:order`)
-- **RoleShapeRules** (mapping van `vwm:RolType` naar rol‑TB metadata via `sh:targetNode`)
 - UI/lookup‑metadata op `sh:property` (bijv. externe lookup voor kenteken → RDW)
 
 ### Regelmodel (RDF)
 
-**RelatieRegels** (automatische koppelingen)
+**RelatieRegels** (automatische koppelingen, legacy/optioneel)
 - Class: `vwm:RelatieRegel`
 - Properties:
   - `vwm:vanClass`
   - `vwm:naarClass`
   - `vwm:predicate`
 
-**RoleShapeRules** (rol‑TB’s genereren)
-- Bron: SHACL `sh:NodeShape` met `sh:targetNode` op `vwm:RolType_*`
-- Properties:
-  - `sh:targetNode` (roltype)
-  - `vwm:rolTbClass`
-  - `vwm:vanClass`
-  - `vwm:naarClass`
-  - `vwm:vanProperty`
-  - `vwm:naarProperty`
+Let op:
+- `vwm:RelatieRegel` staat nog in de ontologie, maar is niet meer het primaire sturingsmechanisme in de huidige bewerkflow.
+- Primair zijn nu: `transactie_soort_sjabloon` (SQLite), rolregels in SHACL (`shapes-process.ttl`) en shape-metadata per sjabloon.
 
 **Lookup metadata op PropertyShape** (externe verrijking)
-- `vwm:lookupEndpoint` (API endpoint)
-- `vwm:lookupQueryParam` (query parameter voor bronveld)
-- `vwm:lookupSourceField` (veldnaam uit response voor targetveld)
-- `vwm:lookupTrigger` (`input` of `blur`)
-- `vwm:lookupDebounceMs`
-- `vwm:lookupMinLength`
+- `ui:lookupEndpoint` (API endpoint)
+- `ui:lookupQueryParam` (query parameter voor bronveld)
+- `ui:lookupSourceField` (veldnaam uit response voor targetveld)
+- `ui:lookupTrigger` (`input` of `blur`)
+- `ui:lookupDebounceMs`
+- `ui:lookupMinLength`
+- `ui:fieldWidth` (UI-breedtehint, bijv. `sm`, `md`, `full`)
 
 **Identity metadata op PropertyShape** (GO-hergebruik / deduplicatie)
 - `vwm:isIdentityKey true` (veld telt mee als identity-key)
@@ -66,8 +79,16 @@ php scripts/update_ontologie_graphdb.php
 ```
 
 Dit script synchroniseert SHACL-shapes naar beide graph-contexten:
-- `http://vwm.voorbeeld.nl/model/ontologie` (voor UI-metadatasqueries)
+- `http://vwm.voorbeeld.nl/model/ontologie` (ontologie triples)
+- `http://vwm.voorbeeld.nl/model/shapes/domain` (domein-shapes die de app bevraagt)
+- `http://vwm.voorbeeld.nl/model/shapes/process` (proces-shapes die de app bevraagt)
+- `http://vwm.voorbeeld.nl/model/shapes/ui` (UI-shapes die de app bevraagt)
 - `http://rdf4j.org/schema/rdf4j#SHACLShapeGraph` (voor GraphDB SHACL-validatie)
+
+Belangrijk:
+- Als alleen `ontology/shapes.ttl`/`SHACLShapeGraph` is bijgewerkt maar `/model/shapes/*` niet,
+  kan de UI sjablonen tonen als **"Onbekend sjabloon"**.
+- Daarom altijd `php scripts/update_ontologie_graphdb.php` draaien na shape-wijzigingen.
 
 ## Bestaande voertuigen normaliseren op kenteken
 
@@ -98,7 +119,6 @@ php scripts/clear_toestand_data_sqlite.php --apply
 
 Laravel leest de regels via SPARQL:
 - `RelatieRegels` → automatisch koppelen van GOIC’s
-- `RoleShapeRules` (uit SHACL) → aanmaken van rol‑TB’s
 - `RolTypes` → mapping van legacy UI keys naar roltype‑URI’s
 - Lookup metadata op `sh:property` → generieke veldverrijking in de UI
   (o.a. kentekenlookup via `/api/voertuig/kenteken`)
@@ -110,3 +130,13 @@ Laravel leest de regels via SPARQL:
   (niet actief bevraagd voor inhoudelijke applicatielogica)
 
 Daarmee bevat de sjabloon/verwerkingsflow geen hardcoded veldmapping meer; gedrag komt uit RDF/SHACL metadata.
+
+## Verificatie na muteren/verwijderen
+
+Gebruik de standaard verificatie-set in:
+
+- `readme/Mutatie_Verificatie_Queries.md`
+
+Deze bevat SQLite- en SPARQL-queries voor:
+- `mutate` (oude TB beëindigen + nieuwe TB registreren)
+- `role delete` (alleen beëindigen van geraakte TB)
