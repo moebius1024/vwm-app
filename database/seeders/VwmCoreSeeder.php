@@ -50,6 +50,7 @@ class VwmCoreSeeder extends Seeder
                 'sjabloon_uri' => 'http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving',
                 'type' => 'sjabloon',
                 'volgorde' => 1,
+                'crud_flags' => 'CRUD',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -89,6 +90,7 @@ class VwmCoreSeeder extends Seeder
                     ->update([
                         'type' => 'sjabloon',
                         'volgorde' => $desc['volgorde'],
+                        'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
                         'updated_at' => now(),
                     ]);
 
@@ -100,6 +102,7 @@ class VwmCoreSeeder extends Seeder
                 'sjabloon_uri' => $desc['uri'],
                 'type' => 'sjabloon',
                 'volgorde' => $desc['volgorde'],
+                'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -126,6 +129,7 @@ class VwmCoreSeeder extends Seeder
                     'sjabloon_uri' => $rolTb['uri'],
                     'type' => 'rol',
                     'volgorde' => $rolTb['volgorde'],
+                    'crud_flags' => 'CRD',
                     'created_at' => now(),
                     'updated_at' => now(),
                 ]);
@@ -164,6 +168,7 @@ class VwmCoreSeeder extends Seeder
                     ->update([
                         'type' => 'sjabloon',
                         'volgorde' => $desc['volgorde'],
+                        'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
                         'updated_at' => now(),
                     ]);
 
@@ -175,6 +180,7 @@ class VwmCoreSeeder extends Seeder
                 'sjabloon_uri' => $desc['uri'],
                 'type' => 'sjabloon',
                 'volgorde' => $desc['volgorde'],
+                'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -250,6 +256,8 @@ class VwmCoreSeeder extends Seeder
         $autodiefstalSjablonen = [
             ['uri' => 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving', 'volgorde' => 1],
             ['uri' => 'http://ontologie.politie.nl/def/vwm#VoertuigBeschrijving', 'volgorde' => 2],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving', 'volgorde' => 3],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#PersoonSignalement', 'volgorde' => 4],
         ];
 
         foreach ($autodiefstalSjablonen as $desc) {
@@ -264,6 +272,7 @@ class VwmCoreSeeder extends Seeder
                     ->update([
                         'type' => 'sjabloon',
                         'volgorde' => $desc['volgorde'],
+                        'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
                         'updated_at' => now(),
                     ]);
 
@@ -275,6 +284,45 @@ class VwmCoreSeeder extends Seeder
                 'sjabloon_uri' => $desc['uri'],
                 'type' => 'sjabloon',
                 'volgorde' => $desc['volgorde'],
+                'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        // 4a. Autodiefstal: toegestane rol-TB's
+        $autodiefstalRolTbClasses = [
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Eigenaar', 'volgorde' => 1],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Getuige', 'volgorde' => 2],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Verdachte', 'volgorde' => 3],
+        ];
+
+        foreach ($autodiefstalRolTbClasses as $rolTb) {
+            $existing = DB::table('transactie_soort_sjabloon')
+                ->where('transactie_soort_id', $autodiefstalTransactieId)
+                ->where('sjabloon_uri', $rolTb['uri'])
+                ->where('type', 'rol')
+                ->first(['id']);
+
+            if ($existing) {
+                DB::table('transactie_soort_sjabloon')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'type' => 'rol',
+                        'volgorde' => $rolTb['volgorde'],
+                        'crud_flags' => 'CRD',
+                        'updated_at' => now(),
+                    ]);
+
+                continue;
+            }
+
+            DB::table('transactie_soort_sjabloon')->insert([
+                'transactie_soort_id' => $autodiefstalTransactieId,
+                'sjabloon_uri' => $rolTb['uri'],
+                'type' => 'rol',
+                'volgorde' => $rolTb['volgorde'],
+                'crud_flags' => 'CRD',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);

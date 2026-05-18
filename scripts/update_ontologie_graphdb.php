@@ -8,7 +8,7 @@ require __DIR__.'/../vendor/autoload.php';
 $app = require __DIR__.'/../bootstrap/app.php';
 $app->make(Kernel::class)->bootstrap();
 
-$ttlPath = __DIR__.'/../Docs/statements.ttl';
+$ttlPath = __DIR__.'/../ontology/statements.ttl';
 if (! file_exists($ttlPath)) {
     echo "Ontology file not found: {$ttlPath}\n";
     exit(1);
@@ -20,7 +20,7 @@ if ($ttl === '') {
     exit(1);
 }
 
-$shapesPath = __DIR__.'/../Docs/shapes.ttl';
+$shapesPath = __DIR__.'/../ontology/shapes.ttl';
 if (! file_exists($shapesPath)) {
     echo "Shapes file not found: {$shapesPath}\n";
     exit(1);
@@ -30,6 +30,28 @@ $shapesRaw = trim(file_get_contents($shapesPath));
 if ($shapesRaw === '') {
     echo "Shapes file is empty.\n";
     exit(1);
+}
+
+$shapeSources = [
+    'http://vwm.voorbeeld.nl/model/shapes/domain' => __DIR__.'/../ontology/shapes-domain.ttl',
+    'http://vwm.voorbeeld.nl/model/shapes/process' => __DIR__.'/../ontology/shapes-process.ttl',
+    'http://vwm.voorbeeld.nl/model/shapes/ui' => __DIR__.'/../ontology/shapes-ui.ttl',
+];
+
+$shapePayloads = [];
+foreach ($shapeSources as $targetGraph => $filePath) {
+    if (! file_exists($filePath)) {
+        echo "Shapes file not found: {$filePath}\n";
+        exit(1);
+    }
+
+    $payload = trim(file_get_contents($filePath));
+    if ($payload === '') {
+        echo "Shapes file is empty: {$filePath}\n";
+        exit(1);
+    }
+
+    $shapePayloads[$targetGraph] = $payload;
 }
 
 $graph = app(GraphService::class);
@@ -47,9 +69,14 @@ $insert = "
 try {
     $graph->update("CLEAR GRAPH <{$graphIri}>");
     $graph->update("CLEAR GRAPH <{$shapeGraphIri}>");
+    foreach (array_keys($shapePayloads) as $targetGraph) {
+        $graph->update("CLEAR GRAPH <{$targetGraph}>");
+    }
     $graph->update(buildShapeGraphCleanup($shapeGraphIri));
     $graph->update($insert);
-    $graph->update(buildShapesInsert($shapesRaw, $graphIri));
+    foreach ($shapePayloads as $targetGraph => $payload) {
+        $graph->update(buildShapesInsert($payload, $targetGraph));
+    }
     $graph->update(buildShapesInsert($shapesRaw, $shapeGraphIri));
     echo "Ontologie + SHACL-shapes bijgewerkt in GraphDB.\n";
 } catch (Exception $e) {

@@ -22,8 +22,9 @@ class SjabloonController extends Controller
     /**
      * Haalt de UI-definitie op uit de Graph op basis van de SQLite ID.
      */
-    public function getSjabloonVoorTransactie($transactieSoortId)
+    public function getSjabloonVoorTransactie(int $id)
     {
+        $transactieSoortId = $id;
         $ts = DB::table('transactie_soorten')->find($transactieSoortId);
 
         if (! $ts) {
@@ -34,7 +35,7 @@ class SjabloonController extends Controller
             ->where('transactie_soort_id', $transactieSoortId)
             ->where('type', 'sjabloon')
             ->orderBy('volgorde')
-            ->get(['sjabloon_uri', 'volgorde'])
+            ->get(['sjabloon_uri', 'volgorde', 'crud_flags'])
             ->all();
 
         $allowed = [];
@@ -48,6 +49,7 @@ class SjabloonController extends Controller
                 'label' => $info['sjabloon_label'],
                 'target_class' => $info['target_class'],
                 'volgorde' => $row->volgorde ?? 1,
+                'crud_flags' => $row->crud_flags ?? 'CRUD',
             ];
 
             if ($primarySjabloon === null) {
@@ -60,7 +62,7 @@ class SjabloonController extends Controller
             ->where('transactie_soort_id', $transactieSoortId)
             ->where('type', 'rol')
             ->orderBy('volgorde')
-            ->get(['sjabloon_uri', 'volgorde'])
+            ->get(['sjabloon_uri', 'volgorde', 'crud_flags'])
             ->all();
 
         $roleUris = array_map(fn ($row) => $row->sjabloon_uri, $linkedRoles);
@@ -70,12 +72,11 @@ class SjabloonController extends Controller
         foreach ($linkedRoles as $row) {
             $selectorUri = $row->sjabloon_uri;
             $meta = $roleMeta[$selectorUri] ?? null;
-            $resolvedRoleType = null;
+            $resolved = $this->metadataService->resolveRoleShapeRuleFromSelector($selectorUri, $roleShapeRules);
+            $resolvedRoleType = $resolved['rolType'] ?? null;
 
             if (! $meta) {
-                $resolved = $this->metadataService->resolveRoleShapeRuleFromSelector($selectorUri, $roleShapeRules);
                 if ($resolved) {
-                    $resolvedRoleType = $resolved['rolType'] ?? null;
                     $meta = [
                         'rolTbClass' => $resolved['rolTbClass'] ?? null,
                         'vanClass' => $resolved['vanClass'] ?? null,
@@ -93,9 +94,11 @@ class SjabloonController extends Controller
             $allowedRoles[] = [
                 'tb_class' => $selectorUri,
                 'label' => $meta['label'] ?? ($resolvedRoleType ? $this->metadataService->shortId($resolvedRoleType) : $this->metadataService->shortId($selectorUri)),
+                'role_type' => $resolvedRoleType,
                 'van_class' => $meta['vanClass'] ?? null,
                 'naar_class' => $meta['naarClass'] ?? null,
                 'volgorde' => $row->volgorde ?? 1,
+                'crud_flags' => $row->crud_flags ?? 'CRD',
             ];
         }
 

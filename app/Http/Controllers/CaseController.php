@@ -18,17 +18,49 @@ class CaseController extends Controller
     public function index(Request $request): Response
     {
         $userId = $request->user()->id;
+        $this->purgeEmptyCasesForUser($userId);
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
+        $team = DB::table('medewerkers')
+            ->leftJoin('teams', 'teams.id', '=', 'medewerkers.team_id')
+            ->where('medewerkers.user_id', $userId)
+            ->first([
+                'medewerkers.team_id',
+                'teams.naam as team_naam',
+            ]);
+        $teamId = $team?->team_id ? (int) $team->team_id : null;
+        $teamNaam = is_string($team?->team_naam) ? $team->team_naam : null;
 
         $caseSoorten = DB::table('case_soorten')
             ->select('id', 'naam', 'code')
+            ->whereIn('rechtsgrond_id', $allowedRechtsgrondIds)
             ->orderBy('naam')
             ->get();
 
-        $cases = DB::table('cases')
+        $latestMutationByCase = DB::table('object_mutaties')
+            ->join('transacties', 'transacties.id', '=', 'object_mutaties.transactie_id')
+            ->selectRaw('transacties.case_id, MAX(object_mutaties.id) AS latest_mutatie_id')
+            ->groupBy('transacties.case_id');
+
+        $casesQuery = DB::table('cases')
             ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
             ->where('cases.user_id', $userId)
-            ->orderByDesc('cases.created_at')
-            ->get([
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+            ->orderByDesc('cases.created_at');
+
+        if ($teamId !== null) {
+            $casesQuery
+                ->joinSub($latestMutationByCase, 'latest_case_mutaties', function ($join) {
+                    $join->on('latest_case_mutaties.case_id', '=', 'cases.id');
+                })
+                ->join('object_mutaties as latest_mutatie', 'latest_mutatie.id', '=', 'latest_case_mutaties.latest_mutatie_id')
+                ->join('transacties as latest_transactie', 'latest_transactie.id', '=', 'latest_mutatie.transactie_id')
+                ->join('medewerkers as latest_medewerker', 'latest_medewerker.user_id', '=', 'latest_transactie.user_id')
+                ->where('latest_medewerker.team_id', $teamId);
+        } else {
+            $casesQuery->whereRaw('1 = 0');
+        }
+
+        $cases = $casesQuery->get([
                 'cases.id',
                 'cases.uuid',
                 'cases.created_at',
@@ -39,6 +71,7 @@ class CaseController extends Controller
         return Inertia::render('cases/Start', [
             'caseSoorten' => $caseSoorten,
             'cases' => $cases,
+            'teamNaam' => $teamNaam,
         ]);
     }
 
@@ -50,10 +83,22 @@ class CaseController extends Controller
         $validated = $request->validate([
             'case_soort_id' => ['required', 'integer', 'exists:case_soorten,id'],
         ]);
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($request->user()->id);
+
+        $caseSoortAllowed = DB::table('case_soorten')
+            ->where('id', $validated['case_soort_id'])
+            ->whereIn('rechtsgrond_id', $allowedRechtsgrondIds)
+            ->exists();
+
+        if (! $caseSoortAllowed) {
+            return redirect()
+                ->route('cases.start')
+                ->with('error', 'Je autorisatierol staat dit case-type niet toe.');
+        }
 
         $caseId = DB::transaction(function () use ($validated, $request) {
             $caseSoort = DB::table('case_soorten')
-                ->select('naam')
+                ->select('naam', 'code')
                 ->where('id', $validated['case_soort_id'])
                 ->first();
 
@@ -82,6 +127,7 @@ class CaseController extends Controller
                 INSERT DATA {
                     GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
                         <{$dossierUri}> a <http://ontologie.politie.nl/def/vwm#Dossier> .
+                        {$this->buildAdditionalDossierTypeTriples((int) $validated['case_soort_id'], $dossierUri)}
                     }
                 }
             ";
@@ -95,18 +141,96 @@ class CaseController extends Controller
     }
 
     /**
+     * Maak een extra dossier aan binnen een bestaande case.
+     */
+    public function storeDossier(Request $request, int $case): RedirectResponse
+    {
+        $validated = $request->validate([
+            'naam' => ['nullable', 'string', 'max:255'],
+            'parent_id' => ['nullable', 'integer'],
+        ]);
+        $userId = (int) $request->user()->id;
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
+
+        $caseRow = DB::table('cases')
+            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
+            ->where('cases.id', $case)
+            ->where('cases.user_id', $userId)
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+            ->first([
+                'cases.id',
+                'cases.case_soort_id',
+                'case_soorten.naam as case_soort_naam',
+            ]);
+
+        if (! $caseRow) {
+            return redirect()->route('cases.start')->with('error', 'Deze case is niet beschikbaar binnen jouw autorisatie.');
+        }
+
+        $parentId = isset($validated['parent_id']) ? (int) $validated['parent_id'] : null;
+        if ($parentId !== null && $parentId > 0) {
+            $parentExists = DB::table('dossiers')
+                ->where('id', $parentId)
+                ->where('case_id', (int) $caseRow->id)
+                ->exists();
+            if (! $parentExists) {
+                return redirect()->route('cases.edit', ['case' => (int) $caseRow->id])
+                    ->with('error', 'Geselecteerd parent-dossier hoort niet bij deze case.');
+            }
+        } else {
+            $parentId = null;
+        }
+
+        DB::transaction(function () use ($validated, $caseRow, $parentId) {
+            $dossierUuid = (string) Str::uuid();
+            $dossierUri = "http://vwm.voorbeeld.nl/data/dossier/{$dossierUuid}";
+            $naam = trim((string) ($validated['naam'] ?? ''));
+            if ($naam === '') {
+                $naam = is_string($caseRow->case_soort_naam ?? null) && $caseRow->case_soort_naam !== ''
+                    ? "Dossier {$caseRow->case_soort_naam}"
+                    : 'Dossier';
+            }
+
+            DB::table('dossiers')->insert([
+                'uuid' => $dossierUuid,
+                'rdf_uri' => $dossierUri,
+                'case_id' => (int) $caseRow->id,
+                'parent_id' => $parentId,
+                'naam' => $naam,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+
+            $dossierTriples = "
+                INSERT DATA {
+                    GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                        <{$dossierUri}> a <http://ontologie.politie.nl/def/vwm#Dossier> .
+                        {$this->buildAdditionalDossierTypeTriples((int) $caseRow->case_soort_id, $dossierUri)}
+                    }
+                }
+            ";
+
+            app(GraphService::class)->update($dossierTriples);
+        });
+
+        return redirect()->route('cases.edit', ['case' => (int) $caseRow->id]);
+    }
+
+    /**
      * Bewerken: registreer + raadpleeg binnen dezelfde case.
      */
-    public function edit(Request $request): Response
+    public function edit(Request $request): Response|RedirectResponse
     {
         $caseId = $request->integer('case');
         $case = null;
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($request->user()->id);
 
         if ($caseId) {
             $case = DB::table('cases')
                 ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
                 ->where('cases.id', $caseId)
                 ->where('cases.user_id', $request->user()->id)
+                ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
                 ->first([
                     'cases.id',
                     'cases.uuid',
@@ -117,7 +241,7 @@ class CaseController extends Controller
         }
 
         if (! $case && $caseId) {
-            return redirect('/start');
+            return redirect('/start')->with('error', 'Deze case is niet beschikbaar binnen jouw autorisatie.');
         }
 
         $transactieSoorten = [];
@@ -134,7 +258,7 @@ class CaseController extends Controller
 
         $dossiersOut = [];
         if ($case) {
-            $dossiersOut = $this->buildDossiersOut($case->id);
+            $dossiersOut = $this->buildDossiersOut($case->id, $request->user()->id, $allowedRechtsgrondIds);
         }
 
         return Inertia::render('cases/Edit', [
@@ -148,9 +272,11 @@ class CaseController extends Controller
     /**
      * Raadplegen: kies bestaande case en bekijk dossier(s) + inhoud.
      */
-    public function consult(Request $request): Response
+    public function consult(Request $request): Response|RedirectResponse
     {
         $userId = $request->user()->id;
+        $this->purgeEmptyCasesForUser($userId);
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
         $caseId = $request->integer('case');
         $followTargetCaseId = $request->integer('follow_target_case');
         $goUri = trim((string) $request->query('go', ''));
@@ -158,6 +284,7 @@ class CaseController extends Controller
         $cases = DB::table('cases')
             ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
             ->where('cases.user_id', $userId)
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
             ->orderByDesc('cases.created_at')
             ->get([
                 'cases.id',
@@ -174,8 +301,12 @@ class CaseController extends Controller
             $activeCase = $cases->firstWhere('id', $caseId);
         }
 
+        if ($caseId && ! $activeCase) {
+            return redirect('/raadplegen')->with('error', 'Deze case is niet beschikbaar binnen jouw autorisatie.');
+        }
+
         if ($activeCase) {
-            $dossiersOut = $this->buildDossiersOut((int) $activeCase->id);
+            $dossiersOut = $this->buildDossiersOut((int) $activeCase->id, $userId, $allowedRechtsgrondIds);
         }
 
         return Inertia::render('cases/Consult', [
@@ -202,6 +333,7 @@ class CaseController extends Controller
         }
 
         $userId = $request->user()->id;
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
         $goicUris = $this->fetchGoicUrisByGoUri($goUri);
         $goics = collect();
 
@@ -211,6 +343,7 @@ class CaseController extends Controller
                 ->join('cases', 'cases.id', '=', 'dossiers.case_id')
                 ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
                 ->where('cases.user_id', $userId)
+                ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
                 ->whereIn('gegevens_objecten_in_context.rdf_uri', $goicUris)
                 ->orderBy('cases.id')
                 ->orderBy('dossiers.id')
@@ -227,32 +360,6 @@ class CaseController extends Controller
                 ]);
         }
 
-        $goicIds = $goics->pluck('goic_id')->values()->all();
-        $mutaties = collect();
-        if (! empty($goicIds)) {
-            $mutaties = DB::table('object_mutaties')
-                ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-                ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
-                ->orderBy('object_mutaties.created_at')
-                ->get([
-                    'object_mutaties.id',
-                    'object_mutaties.gegevens_object_in_context_id as goic_id',
-                    'object_mutaties.sjabloon_uri',
-                    'object_mutaties.created_at',
-                    'toestands_beschrijvingen.id as tb_id',
-                    'toestands_beschrijvingen.rdf_uri as tb_rdf_uri',
-                    'toestands_beschrijvingen.beschrijving as tb_class',
-                ]);
-        }
-
-        $tbDataByUri = $this->fetchTbDataByUris(
-            $mutaties
-                ->pluck('tb_rdf_uri')
-                ->filter(fn ($uri) => is_string($uri) && $uri !== '')
-                ->values()
-                ->all()
-        );
-
         $goicMap = [];
         foreach ($goics as $goic) {
             $goicId = (int) $goic->goic_id;
@@ -268,28 +375,46 @@ class CaseController extends Controller
                 'toestanden' => [],
             ];
         }
+        $goicUriById = [];
+        foreach ($goics as $goic) {
+            $goicUriById[(int) $goic->goic_id] = (string) $goic->goic_rdf_uri;
+        }
+        $toestandenByGoicUri = $this->fetchActiveToestandenByGoicUris(array_values($goicUriById));
+        $tbUris = [];
+        foreach ($toestandenByGoicUri as $rows) {
+            foreach ($rows as $row) {
+                if (is_string($row['tb_rdf_uri'] ?? null) && ($row['tb_rdf_uri'] ?? '') !== '') {
+                    $tbUris[] = $row['tb_rdf_uri'];
+                }
+            }
+        }
+        $tbDataByUri = $this->fetchTbDataByUris($tbUris);
+        $tbAuditByUri = $this->fetchTbAuditMetaByUris($tbUris);
 
-        foreach ($mutaties as $row) {
-            $goicId = (int) ($row->goic_id ?? 0);
-            if ($goicId <= 0 || empty($goicMap[$goicId])) {
+        foreach ($goicMap as $goicId => &$entry) {
+            $goicUri = $goicUriById[(int) $goicId] ?? null;
+            if (! is_string($goicUri) || $goicUri === '') {
                 continue;
             }
-
-            $tbData = null;
-            if (! empty($row->tb_rdf_uri) && is_string($row->tb_rdf_uri)) {
-                $tbData = $tbDataByUri[$row->tb_rdf_uri] ?? null;
+            $rows = $toestandenByGoicUri[$goicUri] ?? [];
+            foreach ($rows as $row) {
+                $tbUri = $row['tb_rdf_uri'] ?? null;
+                if (! is_string($tbUri) || $tbUri === '') {
+                    continue;
+                }
+                $audit = $tbAuditByUri[$tbUri] ?? null;
+                $entry['toestanden'][] = [
+                    'mutatie_id' => is_array($audit) ? ($audit['mutatie_id'] ?? null) : null,
+                    'sjabloon_uri' => is_array($audit) ? ($audit['sjabloon_uri'] ?? null) : ($row['tb_class'] ?? null),
+                    'tb_id' => is_array($audit) ? ($audit['tb_id'] ?? null) : null,
+                    'tb_rdf_uri' => $tbUri,
+                    'tb_class' => $row['tb_class'] ?? null,
+                    'tb_data' => $tbDataByUri[$tbUri] ?? null,
+                    'created_at' => is_array($audit) ? ($audit['created_at'] ?? null) : null,
+                ];
             }
-
-            $goicMap[$goicId]['toestanden'][] = [
-                'mutatie_id' => $row->id,
-                'sjabloon_uri' => $row->sjabloon_uri,
-                'tb_id' => $row->tb_id,
-                'tb_rdf_uri' => $row->tb_rdf_uri,
-                'tb_class' => $row->tb_class,
-                'tb_data' => $tbData,
-                'created_at' => $row->created_at,
-            ];
         }
+        unset($entry);
 
         $this->attachFollowInfoToGoics($goicMap);
 
@@ -315,7 +440,50 @@ class CaseController extends Controller
         ]);
     }
 
-    private function buildDossiersOut(int $caseId): array
+    /**
+     * @return array<int, int>
+     */
+    private function allowedRechtsgrondIdsForUser(int $userId): array
+    {
+        $ids = DB::table('medewerkers')
+            ->join('functies', 'functies.medewerker_id', '=', 'medewerkers.id')
+            ->join('autorisatie_rollen', 'autorisatie_rollen.functie_soort_id', '=', 'functies.functie_soort_id')
+            ->where('medewerkers.user_id', $userId)
+            ->whereNotNull('autorisatie_rollen.rechtsgrond_id')
+            ->distinct()
+            ->pluck('autorisatie_rollen.rechtsgrond_id')
+            ->filter(fn ($id) => is_numeric($id))
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+
+        return ! empty($ids) ? $ids : [-1];
+    }
+
+    private function buildAdditionalDossierTypeTriples(int $caseSoortId, string $dossierUri): string
+    {
+        $types = DB::table('case_soort_dossier_types')
+            ->where('case_soort_id', $caseSoortId)
+            ->orderBy('volgorde')
+            ->orderBy('id')
+            ->pluck('rdf_type_uri')
+            ->filter(fn ($uri) => is_string($uri) && $uri !== '' && $uri !== 'http://ontologie.politie.nl/def/vwm#Dossier')
+            ->values()
+            ->all();
+
+        if (empty($types)) {
+            return '';
+        }
+
+        $triples = [];
+        foreach ($types as $typeUri) {
+            $triples[] = "<{$dossierUri}> a <{$typeUri}> .";
+        }
+
+        return implode("\n", $triples);
+    }
+
+    private function buildDossiersOut(int $caseId, int $userId, array $allowedRechtsgrondIds): array
     {
         $dossiers = DB::table('dossiers')
             ->where('case_id', $caseId)
@@ -339,38 +507,14 @@ class CaseController extends Controller
                 'created_at',
             ]);
 
+        $visibleGoicUris = $this->fetchVisibleGoicUrisForUser($userId, $allowedRechtsgrondIds);
         $goLinkMetaByUri = $this->fetchGoLinkMetaByGoicUris(
             $goics
                 ->pluck('rdf_uri')
                 ->filter(fn ($uri) => is_string($uri) && $uri !== '')
                 ->values()
-                ->all()
-        );
-
-        $goicIds = $goics->pluck('id')->all();
-        $mutaties = collect();
-        if (! empty($goicIds)) {
-            $mutaties = DB::table('object_mutaties')
-                ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-                ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
-                ->orderBy('object_mutaties.created_at')
-                ->get([
-                    'object_mutaties.id',
-                    'object_mutaties.gegevens_object_in_context_id as goic_id',
-                    'object_mutaties.sjabloon_uri',
-                    'object_mutaties.created_at',
-                    'toestands_beschrijvingen.id as tb_id',
-                    'toestands_beschrijvingen.rdf_uri as tb_rdf_uri',
-                    'toestands_beschrijvingen.beschrijving as tb_class',
-                ]);
-        }
-
-        $tbDataByUri = $this->fetchTbDataByUris(
-            $mutaties
-                ->pluck('tb_rdf_uri')
-                ->filter(fn ($uri) => is_string($uri) && $uri !== '')
-                ->values()
-                ->all()
+                ->all(),
+            $visibleGoicUris
         );
 
         $goicMap = [];
@@ -386,27 +530,46 @@ class CaseController extends Controller
                 'toestanden' => [],
             ];
         }
+        $goicUriById = [];
+        foreach ($goics as $goic) {
+            $goicUriById[(int) $goic->id] = (string) $goic->rdf_uri;
+        }
+        $toestandenByGoicUri = $this->fetchActiveToestandenByGoicUris(array_values($goicUriById));
+        $tbUris = [];
+        foreach ($toestandenByGoicUri as $rows) {
+            foreach ($rows as $row) {
+                if (is_string($row['tb_rdf_uri'] ?? null) && ($row['tb_rdf_uri'] ?? '') !== '') {
+                    $tbUris[] = $row['tb_rdf_uri'];
+                }
+            }
+        }
+        $tbDataByUri = $this->fetchTbDataByUris($tbUris);
+        $tbAuditByUri = $this->fetchTbAuditMetaByUris($tbUris);
 
-        foreach ($mutaties as $row) {
-            if (empty($row->goic_id) || empty($goicMap[$row->goic_id])) {
+        foreach ($goicMap as $goicId => &$entry) {
+            $goicUri = $goicUriById[(int) $goicId] ?? null;
+            if (! is_string($goicUri) || $goicUri === '') {
                 continue;
             }
-
-            $tbData = null;
-            if (! empty($row->tb_rdf_uri) && is_string($row->tb_rdf_uri)) {
-                $tbData = $tbDataByUri[$row->tb_rdf_uri] ?? null;
+            $rows = $toestandenByGoicUri[$goicUri] ?? [];
+            foreach ($rows as $row) {
+                $tbUri = $row['tb_rdf_uri'] ?? null;
+                if (! is_string($tbUri) || $tbUri === '') {
+                    continue;
+                }
+                $audit = $tbAuditByUri[$tbUri] ?? null;
+                $entry['toestanden'][] = [
+                    'mutatie_id' => is_array($audit) ? ($audit['mutatie_id'] ?? null) : null,
+                    'sjabloon_uri' => is_array($audit) ? ($audit['sjabloon_uri'] ?? null) : ($row['tb_class'] ?? null),
+                    'tb_id' => is_array($audit) ? ($audit['tb_id'] ?? null) : null,
+                    'tb_rdf_uri' => $tbUri,
+                    'tb_class' => $row['tb_class'] ?? null,
+                    'tb_data' => $tbDataByUri[$tbUri] ?? null,
+                    'created_at' => is_array($audit) ? ($audit['created_at'] ?? null) : null,
+                ];
             }
-
-            $goicMap[$row->goic_id]['toestanden'][] = [
-                'mutatie_id' => $row->id,
-                'sjabloon_uri' => $row->sjabloon_uri,
-                'tb_id' => $row->tb_id,
-                'tb_rdf_uri' => $row->tb_rdf_uri,
-                'tb_class' => $row->tb_class,
-                'tb_data' => $tbData,
-                'created_at' => $row->created_at,
-            ];
         }
+        unset($entry);
 
         $this->attachFollowInfoToGoics($goicMap);
 
@@ -598,62 +761,186 @@ class CaseController extends Controller
             return [];
         }
 
-        $rows = DB::table('object_mutaties')
-            ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-            ->whereIn('object_mutaties.gegevens_object_in_context_id', $ids)
-            ->orderByDesc('object_mutaties.created_at')
-            ->orderByDesc('object_mutaties.id')
-            ->get([
-                'object_mutaties.id as mutatie_id',
-                'object_mutaties.gegevens_object_in_context_id as goic_id',
-                'object_mutaties.created_at',
-                'toestands_beschrijvingen.rdf_uri as tb_rdf_uri',
-                'toestands_beschrijvingen.beschrijving as tb_class',
-            ]);
+        $goics = DB::table('gegevens_objecten_in_context')
+            ->whereIn('id', $ids)
+            ->get(['id', 'rdf_uri']);
 
-        $result = [];
-        $fallback = [];
-        foreach ($rows as $row) {
-            $goicId = (int) ($row->goic_id ?? 0);
-            if ($goicId <= 0) {
-                continue;
+        $idByUri = [];
+        foreach ($goics as $goic) {
+            if (is_string($goic->rdf_uri) && $goic->rdf_uri !== '') {
+                $idByUri[$goic->rdf_uri] = (int) $goic->id;
             }
-
-            $entry = [
-                'mutatie_id' => (int) ($row->mutatie_id ?? 0),
-                'created_at' => $row->created_at,
-                'tb_rdf_uri' => $row->tb_rdf_uri,
-                'tb_class' => $row->tb_class,
-            ];
-
-            if (! isset($fallback[$goicId])) {
-                $fallback[$goicId] = $entry;
-            }
-
-            if (isset($result[$goicId])) {
-                continue;
-            }
-
-            $tbClass = (string) ($row->tb_class ?? '');
-            $isRoleClass = $tbClass !== '' && stripos($tbClass, 'rol') !== false;
-
-            if ($isRoleClass) {
-                continue;
-            }
-
-            $result[$goicId] = $entry;
         }
 
-        foreach ($fallback as $goicId => $entry) {
-            if (! isset($result[$goicId])) {
-                $result[$goicId] = $entry;
+        $toestandenByGoicUri = $this->fetchActiveToestandenByGoicUris(array_keys($idByUri));
+        $tbUris = [];
+        foreach ($toestandenByGoicUri as $rows) {
+            foreach ($rows as $row) {
+                if (is_string($row['tb_rdf_uri'] ?? null) && ($row['tb_rdf_uri'] ?? '') !== '') {
+                    $tbUris[] = $row['tb_rdf_uri'];
+                }
+            }
+        }
+        $auditByTbUri = $this->fetchTbAuditMetaByUris($tbUris);
+        $result = [];
+
+        foreach ($toestandenByGoicUri as $goicUri => $rows) {
+            $goicId = $idByUri[$goicUri] ?? null;
+            if (! is_int($goicId) || $goicId <= 0) {
+                continue;
+            }
+
+            $sorted = $rows;
+            usort($sorted, function (array $a, array $b) use ($auditByTbUri) {
+                $aTb = $a['tb_rdf_uri'] ?? '';
+                $bTb = $b['tb_rdf_uri'] ?? '';
+                $aAudit = is_string($aTb) ? ($auditByTbUri[$aTb] ?? null) : null;
+                $bAudit = is_string($bTb) ? ($auditByTbUri[$bTb] ?? null) : null;
+                $aCreated = (string) (is_array($aAudit) ? ($aAudit['created_at'] ?? '') : '');
+                $bCreated = (string) (is_array($bAudit) ? ($bAudit['created_at'] ?? '') : '');
+                return $bCreated <=> $aCreated;
+            });
+
+            $preferred = null;
+            $fallback = null;
+            foreach ($sorted as $row) {
+                $tbClass = (string) ($row['tb_class'] ?? '');
+                $isRoleClass = $tbClass !== '' && stripos($tbClass, 'rol') !== false;
+                if ($fallback === null) {
+                    $fallback = $row;
+                }
+                if (! $isRoleClass) {
+                    $preferred = $row;
+                    break;
+                }
+            }
+
+            $selected = $preferred ?? $fallback;
+            if (! is_array($selected)) {
+                continue;
+            }
+
+            $tbUri = $selected['tb_rdf_uri'] ?? null;
+            $audit = is_string($tbUri) ? ($auditByTbUri[$tbUri] ?? null) : null;
+            $result[$goicId] = [
+                'mutatie_id' => is_array($audit) ? ($audit['mutatie_id'] ?? null) : null,
+                'created_at' => is_array($audit) ? ($audit['created_at'] ?? null) : null,
+                'tb_rdf_uri' => $tbUri,
+                'tb_class' => $selected['tb_class'] ?? null,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int, string>  $goicUris
+     * @return array<string, array<int, array{tb_rdf_uri:string,tb_class:string|null}>>
+     */
+    private function fetchActiveToestandenByGoicUris(array $goicUris): array
+    {
+        $uris = array_values(array_unique(array_filter($goicUris, fn ($uri) => is_string($uri) && $uri !== '')));
+        if (empty($uris)) {
+            return [];
+        }
+
+        $result = [];
+        $graph = app(GraphService::class);
+        foreach (array_chunk($uris, 100) as $chunk) {
+            $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", $chunk));
+            $query = "
+                PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+                PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+                PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+                SELECT DISTINCT ?goic ?tb ?tbClass
+                WHERE {
+                    VALUES ?goic { {$iriList} }
+                    {
+                        ?tb vwm:beschrijftGOIC ?goic .
+                    }
+                    UNION
+                    {
+                        ?mutatie a vwm:ObjectMutatie ;
+                                 vwm:heeftBetrekkingOp ?goic ;
+                                 vwm:produceert ?tb .
+                    }
+                    ?tb rdf:type ?tbClass .
+                    FILTER (?tbClass != vwm:ToestandsBeschrijving)
+                    FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+                }
+                ORDER BY ?goic ?tb
+            ";
+
+            try {
+                $rows = $graph->query($query);
+            } catch (\Throwable $e) {
+                logger()->warning('Kon actieve toestanden niet uit GraphDB lezen', [
+                    'message' => $e->getMessage(),
+                ]);
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $goicUri = $row['goic'] ?? null;
+                $tbUri = $row['tb'] ?? null;
+                $tbClass = $row['tbClass'] ?? null;
+                if (! is_string($goicUri) || $goicUri === '' || ! is_string($tbUri) || $tbUri === '') {
+                    continue;
+                }
+                if (! isset($result[$goicUri])) {
+                    $result[$goicUri] = [];
+                }
+                $result[$goicUri][] = [
+                    'tb_rdf_uri' => $tbUri,
+                    'tb_class' => is_string($tbClass) ? $tbClass : null,
+                ];
             }
         }
 
         return $result;
     }
 
-    private function fetchGoLinkMetaByGoicUris(array $goicUris): array
+    /**
+     * @param  array<int, string>  $tbUris
+     * @return array<string, array<string, mixed>>
+     */
+    private function fetchTbAuditMetaByUris(array $tbUris): array
+    {
+        $uris = array_values(array_unique(array_filter($tbUris, fn ($uri) => is_string($uri) && $uri !== '')));
+        if (empty($uris)) {
+            return [];
+        }
+
+        $rows = DB::table('object_mutaties')
+            ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
+            ->whereIn('toestands_beschrijvingen.rdf_uri', $uris)
+            ->orderByDesc('object_mutaties.id')
+            ->get([
+                'object_mutaties.id as mutatie_id',
+                'object_mutaties.sjabloon_uri',
+                'object_mutaties.created_at',
+                'toestands_beschrijvingen.id as tb_id',
+                'toestands_beschrijvingen.rdf_uri as tb_rdf_uri',
+            ]);
+
+        $result = [];
+        foreach ($rows as $row) {
+            $tbUri = $row->tb_rdf_uri ?? null;
+            if (! is_string($tbUri) || $tbUri === '' || isset($result[$tbUri])) {
+                continue;
+            }
+            $result[$tbUri] = [
+                'mutatie_id' => (int) ($row->mutatie_id ?? 0),
+                'sjabloon_uri' => $row->sjabloon_uri,
+                'created_at' => $row->created_at,
+                'tb_id' => $row->tb_id,
+            ];
+        }
+
+        return $result;
+    }
+
+    private function fetchGoLinkMetaByGoicUris(array $goicUris, array $visibleGoicUris): array
     {
         $uris = array_values(array_unique(array_filter($goicUris, function ($uri) {
             return is_string($uri) && $uri !== '';
@@ -665,6 +952,10 @@ class CaseController extends Controller
 
         $graph = app(GraphService::class);
         $result = [];
+        $visibleGoicLookup = array_fill_keys(array_values(array_unique($visibleGoicUris)), true);
+        if (empty($visibleGoicLookup)) {
+            return [];
+        }
 
         foreach (array_chunk($uris, 100) as $chunk) {
             $iriList = implode(' ', array_map(function ($uri) {
@@ -673,13 +964,12 @@ class CaseController extends Controller
 
             $query = "
                 PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-                SELECT ?goic ?go (COUNT(DISTINCT ?otherGoic) AS ?linkedCount)
+                SELECT ?goic ?go ?otherGoic
                 WHERE {
                     VALUES ?goic { {$iriList} }
                     ?goic vwm:beschrijftGO ?go .
                     ?otherGoic vwm:beschrijftGO ?go .
                 }
-                GROUP BY ?goic ?go
             ";
 
             try {
@@ -692,21 +982,56 @@ class CaseController extends Controller
                 continue;
             }
 
+            $countBuffer = [];
             foreach ($rows as $row) {
                 $goicUri = $row['goic'] ?? null;
                 $goUri = $row['go'] ?? null;
-                if (! is_string($goicUri) || $goicUri === '' || ! is_string($goUri) || $goUri === '') {
+                $otherGoic = $row['otherGoic'] ?? null;
+                if (! is_string($goicUri) || $goicUri === '' || ! is_string($goUri) || $goUri === '' || ! is_string($otherGoic) || $otherGoic === '') {
                     continue;
                 }
 
+                if (! isset($visibleGoicLookup[$otherGoic])) {
+                    continue;
+                }
+
+                if (! isset($countBuffer[$goicUri])) {
+                    $countBuffer[$goicUri] = [
+                        'go_uri' => $goUri,
+                        'others' => [],
+                    ];
+                }
+
+                $countBuffer[$goicUri]['others'][$otherGoic] = true;
+            }
+
+            foreach ($countBuffer as $goicUri => $meta) {
                 $result[$goicUri] = [
-                    'go_uri' => $goUri,
-                    'linked_goic_count' => (int) ($row['linkedCount'] ?? 0),
+                    'go_uri' => $meta['go_uri'],
+                    'linked_goic_count' => count($meta['others']),
                 ];
             }
         }
 
         return $result;
+    }
+
+    /**
+     * @param  array<int, int>  $allowedRechtsgrondIds
+     * @return array<int, string>
+     */
+    private function fetchVisibleGoicUrisForUser(int $userId, array $allowedRechtsgrondIds): array
+    {
+        return DB::table('gegevens_objecten_in_context')
+            ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
+            ->join('cases', 'cases.id', '=', 'dossiers.case_id')
+            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
+            ->where('cases.user_id', $userId)
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+            ->pluck('gegevens_objecten_in_context.rdf_uri')
+            ->filter(fn ($uri) => is_string($uri) && $uri !== '')
+            ->values()
+            ->all();
     }
 
     private function fetchGoicUrisByGoUri(string $goUri): array
@@ -832,5 +1157,75 @@ class CaseController extends Controller
         }
 
         return $result;
+    }
+
+    private function purgeEmptyCasesForUser(int $userId): void
+    {
+        $emptyCases = DB::table('cases')
+            ->where('cases.user_id', $userId)
+            ->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('transacties')
+                    ->whereColumn('transacties.case_id', 'cases.id');
+            })
+            ->whereNotExists(function ($q) {
+                $q->select(DB::raw(1))
+                    ->from('dossiers')
+                    ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.dossier_id', '=', 'dossiers.id')
+                    ->whereColumn('dossiers.case_id', 'cases.id');
+            })
+            ->get(['cases.id']);
+
+        if ($emptyCases->isEmpty()) {
+            return;
+        }
+
+        foreach ($emptyCases as $case) {
+            $caseId = (int) ($case->id ?? 0);
+            if ($caseId <= 0) {
+                continue;
+            }
+
+            DB::transaction(function () use ($caseId) {
+                $dossiers = DB::table('dossiers')
+                    ->where('case_id', $caseId)
+                    ->get(['id', 'rdf_uri']);
+
+                $dossierUris = $dossiers
+                    ->pluck('rdf_uri')
+                    ->filter(fn ($uri) => is_string($uri) && $uri !== '')
+                    ->values()
+                    ->all();
+
+                if (! empty($dossierUris)) {
+                    try {
+                        $iriList = implode(' ', array_map(fn ($uri) => "<{$uri}>", $dossierUris));
+                        app(GraphService::class)->update("
+                            DELETE {
+                                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                                    ?d ?p ?o .
+                                    ?s ?p2 ?d .
+                                }
+                            }
+                            WHERE {
+                                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                                    VALUES ?d { {$iriList} }
+                                    OPTIONAL { ?d ?p ?o . }
+                                    OPTIONAL { ?s ?p2 ?d . }
+                                }
+                            }
+                        ");
+                    } catch (\Throwable $e) {
+                        logger()->warning('Kon lege case niet volledig uit GraphDB opschonen', [
+                            'case_id' => $caseId,
+                            'message' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                DB::table('dossiers')->where('case_id', $caseId)->delete();
+                DB::table('cases')->where('id', $caseId)->delete();
+            });
+        }
     }
 }

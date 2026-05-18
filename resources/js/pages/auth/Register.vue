@@ -106,18 +106,18 @@ defineOptions({
                         >
                             <div class="grid gap-6">
                                 <div class="grid gap-2">
-                                    <Label for="name">Name</Label>
+                                    <Label for="medewerker_nummer">Medewerkernummer</Label>
                                     <Input
-                                        id="name"
+                                        id="medewerker_nummer"
                                         type="text"
                                         required
                                         autofocus
                                         :tabindex="1"
-                                        autocomplete="name"
-                                        name="name"
-                                        placeholder="Full name"
+                                        autocomplete="off"
+                                        name="medewerker_nummer"
+                                        placeholder="Bijv. 12851"
                                     />
-                                    <InputError :message="errors.name" />
+                                    <InputError :message="errors.medewerker_nummer" />
                                 </div>
 
                                 <div class="grid gap-2">

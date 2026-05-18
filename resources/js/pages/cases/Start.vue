@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Head, Link, useForm } from '@inertiajs/vue3';
+import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 
 type CaseSoort = {
     id: number;
@@ -18,11 +19,14 @@ type CaseItem = {
 const props = defineProps<{
     caseSoorten: CaseSoort[];
     cases: CaseItem[];
+    teamNaam?: string | null;
 }>();
 
 const form = useForm({
     case_soort_id: props.caseSoorten[0]?.id ?? null,
 });
+const page = usePage();
+const flashError = computed(() => (page.props.flash as { error?: string } | undefined)?.error ?? '');
 
 const submit = () => {
     if (!form.case_soort_id) {
@@ -37,6 +41,13 @@ return;
     <Head title="Cases" />
 
     <div class="flex h-full flex-1 flex-col gap-6 rounded-xl p-4">
+        <div
+            v-if="flashError"
+            class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
+            {{ flashError }}
+        </div>
+
         <div class="rounded-2xl border border-sidebar-border/70 bg-gradient-to-br from-white via-white to-amber-50 px-6 py-5 shadow-sm dark:border-sidebar-border dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
             <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">Kies of maak een case</h1>
             <p class="text-sm text-gray-600 dark:text-gray-300">
@@ -46,7 +57,7 @@ return;
 
         <div class="grid gap-6 lg:grid-cols-2">
             <div class="rounded-2xl border border-sidebar-border/70 bg-white p-6 shadow-sm dark:border-sidebar-border dark:bg-gray-900">
-                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Bestaande case</h2>
+                <h2 class="text-lg font-semibold text-gray-900 dark:text-white">Bestaande case (Team: {{ teamNaam ?? 'Onbekend' }})</h2>
                 <p class="mt-1 text-sm text-gray-600 dark:text-gray-300">
                     Ga verder waar je gebleven was.
                 </p>

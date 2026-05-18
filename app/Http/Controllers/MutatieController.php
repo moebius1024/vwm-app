@@ -35,6 +35,7 @@ class MutatieController extends Controller
             'transactie_soort_id' => 'required|integer',
             'case_id' => 'required|integer',
         ]);
+        $mode = (string) $request->input('mode', 'register');
 
         $case = DB::table('cases')
             ->where('id', $base['case_id'])
@@ -54,21 +55,36 @@ class MutatieController extends Controller
             return response()->json(['error' => 'Geen dossier gevonden voor deze case'], 422);
         }
 
-        $relatieRegels = $this->metadataService->fetchRelatieRegels();
         $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
+        if ($mode === 'delete') {
+            return $this->deleteToestandMutatie($request, $base, (int) $dossier->id, $userId, $roleShapeRules);
+        }
+
+        $relatieRegels = $this->metadataService->fetchRelatieRegels();
         $rolTypesByKey = $this->metadataService->fetchRolTypesByKey();
-        $allowedRoleSelectors = DB::table('transactie_soort_sjabloon')
+        $allowedRoleRows = DB::table('transactie_soort_sjabloon')
             ->where('transactie_soort_id', $base['transactie_soort_id'])
             ->where('type', 'rol')
             ->orderBy('volgorde')
-            ->pluck('sjabloon_uri')
+            ->get(['sjabloon_uri', 'crud_flags'])
             ->all();
+        $allowedRoleSelectors = array_values(array_filter(array_map(fn ($row) => $row->sjabloon_uri ?? null, $allowedRoleRows)));
+        $roleCrudBySelector = [];
+        foreach ($allowedRoleRows as $row) {
+            if (! is_string($row->sjabloon_uri ?? null) || $row->sjabloon_uri === '') {
+                continue;
+            }
+            $roleCrudBySelector[$row->sjabloon_uri] = strtoupper((string) ($row->crud_flags ?? 'CRD'));
+        }
         $enforceAllowedRole = ! empty($allowedRoleSelectors);
 
         // 2. Ondersteun meerdere objecten per scherm (en legacy single-object payload)
         $objects = $request->input('objects');
+        $rolesInput = $request->input('roles', []);
+        $roleItemsInput = is_array($rolesInput['items'] ?? null) ? $rolesInput['items'] : [];
+        $hasRoleItems = count($roleItemsInput) > 0;
 
-        if (empty($objects)) {
+        if (empty($objects) && ! $hasRoleItems) {
             $legacy = $request->validate([
                 'sjabloon_uri' => 'required|string',
                 'target_class' => 'required|string',
@@ -81,16 +97,29 @@ class MutatieController extends Controller
                 'target_class' => $legacy['target_class'],
                 'data' => $legacy['data'],
             ]];
-        } else {
+        } elseif (! empty($objects)) {
             $request->validate([
                 'objects' => 'required|array|min:1',
                 'objects.*.client_id' => 'required|string',
                 'objects.*.sjabloon_uri' => 'required|string',
                 'objects.*.target_class' => 'required|string',
+                'objects.*.existing_goic_id' => 'sometimes|nullable|integer',
                 'objects.*.data' => 'required|array',
                 'objects.*.data_types' => 'sometimes|array',
                 'roles' => 'sometimes|array',
                 'roles.items' => 'sometimes|array',
+                'roles.items.*.roleType' => 'sometimes|string',
+                'roles.items.*.roleTbClass' => 'sometimes|string',
+                'roles.items.*.fromId' => 'sometimes|string',
+                'roles.items.*.toId' => 'sometimes|string',
+                'roles.items.*.fromGoicId' => 'sometimes|integer',
+                'roles.items.*.toGoicId' => 'sometimes|integer',
+            ]);
+        } else {
+            $objects = [];
+            $request->validate([
+                'roles' => 'required|array',
+                'roles.items' => 'required|array|min:1',
                 'roles.items.*.roleType' => 'sometimes|string',
                 'roles.items.*.roleTbClass' => 'sometimes|string',
                 'roles.items.*.fromId' => 'sometimes|string',
@@ -103,7 +132,37 @@ class MutatieController extends Controller
         $tbClasses = array_values(array_filter(array_unique(array_map(function ($object) {
             return $object['sjabloon_uri'] ?? null;
         }, $objects))));
+        $mutationTargetMeta = null;
+        if ($mode === 'mutate') {
+            $target = $request->validate([
+                'target' => 'required|array',
+                'target.goic_id' => 'required|integer',
+                'target.mutatie_id' => 'required|integer',
+                'target.tb_rdf_uri' => 'nullable|string',
+                'target.sjabloon_uri' => 'nullable|string',
+            ])['target'];
+
+            $mutationTargetMeta = DB::table('object_mutaties')
+                ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
+                ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
+                ->where('object_mutaties.id', (int) $target['mutatie_id'])
+                ->where('gegevens_objecten_in_context.id', (int) $target['goic_id'])
+                ->where('gegevens_objecten_in_context.dossier_id', (int) $dossier->id)
+                ->first([
+                    'object_mutaties.id as mutatie_id',
+                    'object_mutaties.gegevens_object_in_context_id as goic_id',
+                    'gegevens_objecten_in_context.rdf_uri as goic_uri',
+                    'object_mutaties.sjabloon_uri as tb_class',
+                    'toestands_beschrijvingen.id as tb_id',
+                    'toestands_beschrijvingen.rdf_uri as tb_uri',
+                ]);
+
+            if (! $mutationTargetMeta || ! is_string($mutationTargetMeta->tb_uri) || $mutationTargetMeta->tb_uri === '') {
+                return response()->json(['error' => 'Mutatiedoel niet gevonden of ongeldig.'], 422);
+            }
+        }
         $describedClassByTbClass = $this->metadataService->fetchDescribedClassByTbClasses($tbClasses);
+        $allowedSjabloonCrud = $this->fetchAllowedSjabloonCrudByTbClass((int) $base['transactie_soort_id']);
 
         foreach ($objects as &$object) {
             $tbClass = $object['sjabloon_uri'] ?? null;
@@ -122,28 +181,103 @@ class MutatieController extends Controller
             }
 
             $object['target_class'] = $expectedTargetClass;
+
+            if ($mode !== 'mutate' && ! $this->hasCrud($allowedSjabloonCrud[$tbClass] ?? null, 'C')) {
+                return response()->json([
+                    'error' => "Aanmaken niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
+                ], 422);
+            }
+        }
+        unset($object);
+
+        if ($mode === 'mutate' && $mutationTargetMeta) {
+            $tbClass = (string) ($mutationTargetMeta->tb_class ?? '');
+            if ($tbClass === '') {
+                return response()->json(['error' => 'Mutatiedoel heeft een onbekende class.'], 422);
+            }
+            if (! $this->hasCrud($allowedSjabloonCrud[$tbClass] ?? null, 'U')) {
+                return response()->json([
+                    'error' => "Muteren niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
+                ], 422);
+            }
+        }
+
+        $goicTargetClassMap = $this->getGoicTargetClassMapForCase($base['case_id']);
+        $goicIdsByClass = [];
+        foreach ($goicTargetClassMap as $goicId => $classUri) {
+            if (! isset($goicIdsByClass[$classUri])) {
+                $goicIdsByClass[$classUri] = [];
+            }
+            $goicIdsByClass[$classUri][] = $goicId;
+        }
+
+        foreach ($objects as &$object) {
+            $tbClass = (string) ($object['sjabloon_uri'] ?? '');
+            $targetClass = (string) ($object['target_class'] ?? '');
+            $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
+            $isToestandsWeergave = $this->isToestandsWeergaveTbClass($tbClass);
+            $candidateGoicIds = $goicIdsByClass[$targetClass] ?? [];
+
+            // In mutatiemodus schrijven we altijd op het gekozen bestaande GOIC.
+            if ($mode === 'mutate' && $mutationTargetMeta) {
+                $targetGoicId = (int) $mutationTargetMeta->goic_id;
+                $targetGoicClass = $goicTargetClassMap[$targetGoicId] ?? null;
+                if (! is_string($targetGoicClass) || $targetGoicClass !== $targetClass) {
+                    return response()->json([
+                        'error' => "Mutatiedoel hoort niet bij target_class {$targetClass}.",
+                    ], 422);
+                }
+
+                $object['existing_goic_id'] = $targetGoicId;
+                continue;
+            }
+
+            if ($existingGoicId !== null && $existingGoicId > 0) {
+                if (! $isToestandsWeergave) {
+                    return response()->json([
+                        'error' => "Bestaand object koppelen mag alleen voor ToestandsWeergave-sjablonen ({$tbClass}).",
+                    ], 422);
+                }
+
+                $existingClass = $goicTargetClassMap[$existingGoicId] ?? null;
+                if (! is_string($existingClass)) {
+                    return response()->json([
+                        'error' => 'Geselecteerd bestaand object hoort niet bij deze case.',
+                    ], 422);
+                }
+
+                if ($existingClass !== $targetClass) {
+                    return response()->json([
+                        'error' => "Geselecteerd object heeft class {$existingClass}, verwacht {$targetClass}.",
+                    ], 422);
+                }
+
+                $object['existing_goic_id'] = $existingGoicId;
+                continue;
+            }
+
+            if ($isToestandsWeergave) {
+                if (count($candidateGoicIds) === 1) {
+                    $object['existing_goic_id'] = $candidateGoicIds[0];
+                    continue;
+                }
+
+                if (count($candidateGoicIds) > 1) {
+                    return response()->json([
+                        'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze toestandsweergave wilt registreren.",
+                    ], 422);
+                }
+
+                return response()->json([
+                    'error' => "Geen bestaand object ({$targetClass}) gevonden in dit dossier voor deze toestandsweergave.",
+                ], 422);
+            }
+
+            $object['existing_goic_id'] = null;
         }
         unset($object);
 
         $valueHintsByTbClass = $this->metadataService->fetchPropertyValueHintsByTbClasses($tbClasses);
-
-        $targetClassLimit = $this->fetchTargetClassLimitForTransactie($base['transactie_soort_id']);
-        if ($targetClassLimit) {
-            $targetClassUri = $targetClassLimit['target_class_uri'];
-            $maxAllowed = $targetClassLimit['max_count'];
-            $newTargetClassCount = count(array_filter($objects, function ($object) use ($targetClassUri) {
-                return ($object['target_class'] ?? null) === $targetClassUri;
-            }));
-
-            if ($newTargetClassCount > 0) {
-                $existingTargetClassCount = $this->countGoicsForCaseByDescribedClass($base['case_id'], $targetClassUri);
-                if (($existingTargetClassCount + $newTargetClassCount) > $maxAllowed) {
-                    return response()->json([
-                        'error' => "Maximaal {$maxAllowed} object(en) toegestaan voor class {$targetClassUri} in dit dossier.",
-                    ], 422);
-                }
-            }
-        }
 
         $objectUris = [];
         $objectMeta = [];
@@ -159,7 +293,7 @@ class MutatieController extends Controller
 
         // 3. Registreer de processtap + objectmutaties in SQLite
         try {
-            $transactieId = DB::transaction(function () use ($base, $objects, &$objectUris, &$allTriples, &$objectMeta, $dossier, $nowIso, $vwm, $valueHintsByTbClass, $identityRulesByTbClass, $existingGoByIdentityKey, $userId) {
+            $transactieId = DB::transaction(function () use ($base, $objects, &$objectUris, &$allTriples, &$objectMeta, $dossier, $nowIso, $vwm, $valueHintsByTbClass, $identityRulesByTbClass, $existingGoByIdentityKey, $userId, $mode, $mutationTargetMeta) {
                 $transactieId = DB::table('transacties')->insertGetId([
                     'case_id' => $base['case_id'],
                     'transactie_soort_id' => $base['transactie_soort_id'],
@@ -170,9 +304,35 @@ class MutatieController extends Controller
 
                 $goByIdentityKey = $existingGoByIdentityKey;
 
+                if ($mode === 'mutate' && $mutationTargetMeta) {
+                    $invalidateMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
+                    DB::table('object_mutaties')->insert([
+                        'transactie_id' => $transactieId,
+                        'sjabloon_uri' => (string) ($mutationTargetMeta->tb_class ?? ''),
+                        'object_uri' => (string) $mutationTargetMeta->tb_uri,
+                        'gegevens_object_in_context_id' => (int) $mutationTargetMeta->goic_id,
+                        'geproduceerde_toestand_id' => null,
+                        'verwijderde_toestand_id' => isset($mutationTargetMeta->tb_id) ? (int) $mutationTargetMeta->tb_id : null,
+                        'datum_tijd' => now(),
+                        'data' => json_encode([
+                            'actie' => 'beeindig_toestand',
+                            'tb_uri' => (string) $mutationTargetMeta->tb_uri,
+                            'invalidatedAtTime' => $nowIso,
+                        ], JSON_UNESCAPED_SLASHES),
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+
+                    $allTriples .= "<{$mutationTargetMeta->tb_uri}> <http://ontologie.politie.nl/def/dpm#invalidatedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+                    $allTriples .= "<{$invalidateMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
+                    $allTriples .= "<{$invalidateMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$mutationTargetMeta->goic_uri}> . \n";
+                    $allTriples .= "<{$invalidateMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+                }
+
                 foreach ($objects as $object) {
                     $tbClass = $object['sjabloon_uri']; // TB-class (bijv. vwm:PersoonsBeschrijving)
                     $describedClass = $object['target_class']; // Domeinclass (bijv. dpm:Person)
+                    $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
 
                     $identityEntry = $this->resolveObjectIdentityEntry($object, $identityRulesByTbClass);
                     $identityKey = is_array($identityEntry) ? ($identityEntry['key'] ?? null) : null;
@@ -188,24 +348,41 @@ class MutatieController extends Controller
                         $goByIdentityKey[$identityKey] = $goUri;
                     }
 
-                    $goicUuid = (string) Str::uuid();
                     $tbUuid = (string) Str::uuid();
                     $mutatieUuid = (string) Str::uuid();
 
-                    $goicUri = 'http://vwm.voorbeeld.nl/data/goic/'.$goicUuid;
+                    $goicUuid = null;
+                    $goicUri = null;
                     $tbUri = 'http://vwm.voorbeeld.nl/data/tb/'.$tbUuid;
                     $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.$mutatieUuid;
 
                     $objectUris[] = $tbUri;
 
-                    $goicId = DB::table('gegevens_objecten_in_context')->insertGetId([
-                        'uuid' => $goicUuid,
-                        'rdf_uri' => $goicUri,
-                        'dossier_id' => $dossier->id,
-                        'context_data' => null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
+                    if ($existingGoicId !== null && $existingGoicId > 0) {
+                        $existingGoic = DB::table('gegevens_objecten_in_context')
+                            ->where('id', $existingGoicId)
+                            ->where('dossier_id', $dossier->id)
+                            ->first(['id', 'rdf_uri']);
+
+                        if (! $existingGoic) {
+                            throw new \RuntimeException('Bestaand GOIC niet gevonden in dit dossier.');
+                        }
+
+                        $goicId = (int) $existingGoic->id;
+                        $goicUri = (string) $existingGoic->rdf_uri;
+                    } else {
+                        $goicUuid = (string) Str::uuid();
+                        $goicUri = 'http://vwm.voorbeeld.nl/data/goic/'.$goicUuid;
+
+                        $goicId = DB::table('gegevens_objecten_in_context')->insertGetId([
+                            'uuid' => $goicUuid,
+                            'rdf_uri' => $goicUri,
+                            'dossier_id' => $dossier->id,
+                            'context_data' => null,
+                            'created_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                    }
 
                     $tbId = DB::table('toestands_beschrijvingen')->insertGetId([
                         'uuid' => $tbUuid,
@@ -238,10 +415,12 @@ class MutatieController extends Controller
                     ]);
 
                     // GO + GOIC + TB kernstructuur
-                    $allTriples .= "<{$goUri}> a <{$vwm}GegevensObject> . \n";
-                    $allTriples .= "<{$goicUri}> a <{$vwm}GegevensObjectInContext> . \n";
-                    $allTriples .= "<{$goicUri}> <{$vwm}beschrijftGO> <{$goUri}> . \n";
-                    $allTriples .= "<{$goicUri}> <{$vwm}hoortBijDossier> <{$dossier->rdf_uri}> . \n";
+                    if ($existingGoicId === null || $existingGoicId <= 0) {
+                        $allTriples .= "<{$goUri}> a <{$vwm}GegevensObject> . \n";
+                        $allTriples .= "<{$goicUri}> a <{$vwm}GegevensObjectInContext> . \n";
+                        $allTriples .= "<{$goicUri}> <{$vwm}beschrijftGO> <{$goUri}> . \n";
+                        $allTriples .= "<{$goicUri}> <{$vwm}hoortBijDossier> <{$dossier->rdf_uri}> . \n";
+                    }
                     $allTriples .= "<{$tbUri}> a <{$tbClass}> . \n";
                     $allTriples .= "<{$tbUri}> <{$vwm}beschrijftGOIC> <{$goicUri}> . \n";
                     $allTriples .= "<{$tbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
@@ -409,6 +588,14 @@ class MutatieController extends Controller
                 }
             }
 
+            $roleItems = $this->appendAutoRoleItems(
+                $roleItems,
+                $objects,
+                $objectMeta,
+                $goicByClass,
+                $roleShapeRules
+            );
+
             foreach ($roleItems as $roleItem) {
                 $roleType = $roleItem['roleType'] ?? null;
                 $roleTbClass = $roleItem['roleTbClass'] ?? null;
@@ -416,6 +603,8 @@ class MutatieController extends Controller
                 $toId = $roleItem['toId'] ?? null;
                 $fromGoicId = $roleItem['fromGoicId'] ?? null;
                 $toGoicId = $roleItem['toGoicId'] ?? null;
+                $toUri = $roleItem['toUri'] ?? null;
+                $isAutoRole = (bool) ($roleItem['isAuto'] ?? false);
 
                 if ((empty($roleType) && empty($roleTbClass)) || (empty($fromId) && empty($fromGoicId))) {
                     continue;
@@ -462,6 +651,9 @@ class MutatieController extends Controller
                 if ($enforceAllowedRole && ! $this->isAllowedRoleSelection($roleType, $roleTbClass, $allowedRoleSelectors, $roleShapeRules)) {
                     continue;
                 }
+                if (! $isAutoRole && ! $this->isRoleCreateAllowed($roleType, $roleTbClass, $roleCrudBySelector, $roleShapeRules)) {
+                    continue;
+                }
 
                 $fromMeta = null;
                 if (! empty($fromGoicId) && ! empty($goicMetaById[$fromGoicId])) {
@@ -475,7 +667,9 @@ class MutatieController extends Controller
                 }
 
                 $targetGoics = [];
-                if (! empty($toGoicId) && ! empty($goicMetaById[$toGoicId])) {
+                if (is_string($toUri) && $toUri !== '') {
+                    $targetGoics[] = $toUri;
+                } elseif (! empty($toGoicId) && ! empty($goicMetaById[$toGoicId])) {
                     $toMeta = $goicMetaById[$toGoicId];
                     if ($toMeta['target_class'] === $roleMeta['naarClass']) {
                         $targetGoics[] = $toMeta['goic_uri'];
@@ -596,10 +790,10 @@ class MutatieController extends Controller
 
     /**
      * Volg een bestaand GOIC vanuit een andere case:
-     * 1) maak GOIC aan met dezelfde toestand-class als bron
+     * 1) maak GOIC aan
      * 2) koppel aan dezelfde GO
      * 3) leg DataObjectAssociation vast
-     * 4) leg stap 1 en 3 ook vast als object_mutaties in SQLite
+     * 4) leg stap 1 en 3 vast als object_mutaties in SQLite
      */
     public function volgGoic(Request $request)
     {
@@ -943,20 +1137,6 @@ class MutatieController extends Controller
             return null;
         }
 
-        $latest = DB::table('object_mutaties')
-            ->join('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-            ->where('object_mutaties.gegevens_object_in_context_id', (int) $goic->id)
-            ->orderByDesc('object_mutaties.created_at')
-            ->orderByDesc('object_mutaties.id')
-            ->first([
-                'toestands_beschrijvingen.beschrijving as tb_class',
-                'toestands_beschrijvingen.rdf_uri as tb_uri',
-                'object_mutaties.data as data',
-            ]);
-        if (! $latest || ! is_string($latest->tb_class) || $latest->tb_class === '') {
-            return null;
-        }
-
         $query = "
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             SELECT ?go
@@ -970,16 +1150,8 @@ class MutatieController extends Controller
             return null;
         }
 
-        $stateData = json_decode((string) ($latest->data ?? '{}'), true);
-        if (! is_array($stateData)) {
-            $stateData = [];
-        }
-
         return [
             'go_uri' => $rows[0]['go'] ?? null,
-            'source_tb_class' => $latest->tb_class,
-            'source_tb_uri' => $latest->tb_uri,
-            'source_state_data' => $stateData,
         ];
     }
 
@@ -1039,31 +1211,6 @@ class MutatieController extends Controller
             'goic_id' => (int) $goic->id,
             'goic_uri' => (string) $goic->rdf_uri,
         ];
-    }
-
-    private function resolveAssociationTbClass(): ?string
-    {
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
-            SELECT ?tbClass
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/model/ontologie> {
-                    ?tbClass vwm:beschrijftClass dpm:DataObjectAssociation .
-                }
-            }
-            LIMIT 1
-        ";
-
-        try {
-            $rows = $this->graphService->query($query);
-        } catch (\Throwable) {
-            return null;
-        }
-
-        $tbClass = $rows[0]['tbClass'] ?? null;
-
-        return is_string($tbClass) && $tbClass !== '' ? $tbClass : null;
     }
 
     private function inferValueTypeFromSourceData(array $sourceTbDataByUri, string $tbClass, string $property, mixed $value): ?string
@@ -1354,6 +1501,12 @@ class MutatieController extends Controller
             return $explicitType;
         }
 
+        // Als frontend alleen "literal" meestuurt, maar SHACL/metadata een
+        // specifieker type kent, dan volgen we de SHACL-hint.
+        if ($explicitType === 'literal' && is_string($hintType) && in_array($hintType, ['integer', 'decimal', 'date', 'dateTime'], true)) {
+            return $hintType;
+        }
+
         if (is_string($hintType) && in_array($hintType, ['uri', 'integer', 'decimal', 'date', 'dateTime'], true)) {
             return $hintType;
         }
@@ -1365,47 +1518,72 @@ class MutatieController extends Controller
         return 'literal';
     }
 
-    private function fetchTargetClassLimitForTransactie(int $transactieSoortId): ?array
+    private function isToestandsWeergaveTbClass(string $tbClassUri): bool
     {
-        $row = DB::table('transactie_soorten')
-            ->where('id', $transactieSoortId)
-            ->first(['max_target_class_uri', 'max_target_class_count']);
-
-        $targetClassUri = $row->max_target_class_uri ?? null;
-        $maxCount = isset($row->max_target_class_count) ? (int) $row->max_target_class_count : null;
-
-        if (! is_string($targetClassUri) || trim($targetClassUri) === '' || ! is_int($maxCount) || $maxCount < 1) {
-            return null;
-        }
-
-        return [
-            'target_class_uri' => trim($targetClassUri),
-            'max_count' => $maxCount,
-        ];
+        return str_contains($tbClassUri, 'ToestandsWeergave');
     }
 
-    private function countGoicsForCaseByDescribedClass(int $caseId, string $describedClassUri): int
+    private function getGoicTargetClassMapForCase(int $caseId): array
     {
-        $tbClasses = $this->metadataService->fetchTbClassesByDescribedClass($describedClassUri);
-        if (empty($tbClasses)) {
-            return 0;
-        }
-
         $dossierIds = DB::table('dossiers')
             ->where('case_id', $caseId)
             ->pluck('id')
             ->all();
+
         if (empty($dossierIds)) {
-            return 0;
+            return [];
         }
 
-        return (int) DB::table('object_mutaties')
-            ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
-            ->whereIn('gegevens_objecten_in_context.dossier_id', $dossierIds)
-            ->whereIn('object_mutaties.sjabloon_uri', $tbClasses)
-            ->whereNotNull('object_mutaties.gegevens_object_in_context_id')
-            ->distinct()
-            ->count('object_mutaties.gegevens_object_in_context_id');
+        $goics = DB::table('gegevens_objecten_in_context')
+            ->whereIn('dossier_id', $dossierIds)
+            ->get(['id'])
+            ->all();
+
+        if (empty($goics)) {
+            return [];
+        }
+
+        $goicIds = array_map(fn ($row) => (int) $row->id, $goics);
+
+        $tbRows = DB::table('object_mutaties')
+            ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
+            ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
+            ->orderBy('object_mutaties.created_at')
+            ->orderBy('object_mutaties.id')
+            ->get([
+                'object_mutaties.gegevens_object_in_context_id as goic_id',
+                'toestands_beschrijvingen.beschrijving as tb_class',
+            ]);
+
+        $tbHistoryByGoic = [];
+        $tbClassesInUse = [];
+        foreach ($tbRows as $row) {
+            if (! empty($row->tb_class)) {
+                $tbHistoryByGoic[(int) $row->goic_id][] = (string) $row->tb_class;
+                $tbClassesInUse[(string) $row->tb_class] = true;
+            }
+        }
+
+        if (empty($tbClassesInUse)) {
+            return [];
+        }
+
+        $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_keys($tbClassesInUse));
+        $map = [];
+
+        foreach ($goicIds as $goicId) {
+            $tbHistory = $tbHistoryByGoic[$goicId] ?? [];
+            for ($index = count($tbHistory) - 1; $index >= 0; $index--) {
+                $tbClass = $tbHistory[$index];
+                $candidateTargetClass = $describedByTb[$tbClass] ?? null;
+                if (is_string($candidateTargetClass) && $candidateTargetClass !== '') {
+                    $map[$goicId] = $candidateTargetClass;
+                    break;
+                }
+            }
+        }
+
+        return $map;
     }
 
     private function collectIdentityEntriesForObjects(array $objects, array $identityRulesByTbClass): array
@@ -1553,6 +1731,222 @@ class MutatieController extends Controller
         return $goByIdentityKey;
     }
 
+    private function deleteToestandMutatie(Request $request, array $base, int $dossierId, int $userId, array $roleShapeRules)
+    {
+        $payload = $request->validate([
+            'delete_type' => 'required|string|in:role,toestand',
+            'target' => 'required|array',
+            'target.goic_id' => 'required|integer',
+            'target.mutatie_id' => 'required|integer',
+            'target.tb_rdf_uri' => 'nullable|string',
+            'target.sjabloon_uri' => 'nullable|string',
+        ]);
+
+        $target = $payload['target'];
+        $targetRow = DB::table('object_mutaties')
+            ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
+            ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
+            ->where('object_mutaties.id', (int) $target['mutatie_id'])
+            ->where('gegevens_objecten_in_context.id', (int) $target['goic_id'])
+            ->where('gegevens_objecten_in_context.dossier_id', $dossierId)
+            ->first([
+                'object_mutaties.id as mutatie_id',
+                'object_mutaties.sjabloon_uri as tb_class',
+                'toestands_beschrijvingen.id as tb_id',
+                'toestands_beschrijvingen.rdf_uri as tb_uri',
+                'gegevens_objecten_in_context.id as goic_id',
+                'gegevens_objecten_in_context.rdf_uri as goic_uri',
+            ]);
+
+        if (! $targetRow || ! is_string($targetRow->tb_uri) || $targetRow->tb_uri === '') {
+            return response()->json(['error' => 'Doel voor verwijderen niet gevonden.'], 422);
+        }
+        $deleteType = (string) ($payload['delete_type'] ?? '');
+        if ($deleteType === 'role') {
+            if (! $this->isRoleDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
+                return response()->json(['error' => 'Verwijderen niet toegestaan voor deze rol in deze transactie.'], 422);
+            }
+        } else {
+            if ($this->isRoleTbClass((string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
+                return response()->json(['error' => 'Gebruik rol-verwijderen voor roltoestanden.'], 422);
+            }
+            if (! $this->isClassDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''))) {
+                return response()->json(['error' => 'Verwijderen niet toegestaan voor dit sjabloon in deze transactie.'], 422);
+            }
+        }
+
+        $now = now();
+        $nowIso = $now->toAtomString();
+        $vwm = 'http://ontologie.politie.nl/def/vwm#';
+        $dpm = 'http://ontologie.politie.nl/def/dpm#';
+
+        DB::beginTransaction();
+        try {
+            $transactieId = DB::table('transacties')->insertGetId([
+                'case_id' => $base['case_id'],
+                'transactie_soort_id' => $base['transactie_soort_id'],
+                'user_id' => $userId,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ]);
+
+            $toInvalidate = [[
+                'tb_uri' => (string) $targetRow->tb_uri,
+                'tb_class' => (string) ($targetRow->tb_class ?? ''),
+                'tb_id' => isset($targetRow->tb_id) ? (int) $targetRow->tb_id : null,
+            ]];
+
+            // Cascade: wanneer een GOIC geen actieve kern-TB meer heeft, invalideren we ook
+            // alle actieve rol-TB's en ToestandsWeergaves op die GOIC.
+            if ($deleteType === 'toestand') {
+                $activeTbRows = $this->fetchActiveTbRowsForGoic((string) $targetRow->goic_uri);
+                $remainingAfterDelete = array_values(array_filter($activeTbRows, function (array $row) use ($targetRow) {
+                    return ($row['tb_uri'] ?? '') !== (string) $targetRow->tb_uri;
+                }));
+
+                $invalidationRules = $this->metadataService->fetchAutoRoleInvalidationRules();
+                $extraRoleUris = [];
+                foreach ($invalidationRules as $rule) {
+                    $triggerTbClass = (string) ($rule['triggerTbClass'] ?? '');
+                    $rolType = (string) ($rule['rolType'] ?? '');
+                    if ($triggerTbClass === '' || $rolType === '' || $triggerTbClass !== (string) ($targetRow->tb_class ?? '')) {
+                        continue;
+                    }
+
+                    $shapeRule = $roleShapeRules[$rolType] ?? null;
+                    if (! is_array($shapeRule)) {
+                        continue;
+                    }
+
+                    $roleTbClass = (string) ($shapeRule['rolTbClass'] ?? '');
+                    $fromProperty = (string) ($shapeRule['vanProperty'] ?? '');
+                    if ($roleTbClass === '' || $fromProperty === '') {
+                        continue;
+                    }
+
+                    $uris = $this->fetchActiveRoleTbUrisByRoleTypeAndSourceGoic(
+                        (string) $targetRow->goic_uri,
+                        $roleTbClass,
+                        $rolType,
+                        $fromProperty
+                    );
+                    foreach ($uris as $uri) {
+                        $extraRoleUris[$uri] = $roleTbClass;
+                    }
+                }
+
+                if (! empty($extraRoleUris)) {
+                    $tbIdByUri = $this->fetchTbIdsByUris(array_keys($extraRoleUris));
+                    foreach ($extraRoleUris as $uri => $tbClass) {
+                        $toInvalidate[] = [
+                            'tb_uri' => (string) $uri,
+                            'tb_class' => (string) $tbClass,
+                            'tb_id' => $tbIdByUri[$uri] ?? null,
+                        ];
+                    }
+                }
+
+                $remainingKernel = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules) {
+                    $tbClass = (string) ($row['tb_class'] ?? '');
+                    if ($tbClass === '') {
+                        return false;
+                    }
+                    if ($this->isRoleTbClass($tbClass, $roleShapeRules)) {
+                        return false;
+                    }
+                    if ($this->isToestandsWeergaveTbClass($tbClass)) {
+                        return false;
+                    }
+                    if (str_contains(strtolower($tbClass), 'dataobjectassociation')) {
+                        return false;
+                    }
+                    return true;
+                }));
+
+                if (count($remainingKernel) === 0) {
+                    $cascadeRows = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules) {
+                        $tbClass = (string) ($row['tb_class'] ?? '');
+                        if ($tbClass === '') {
+                            return false;
+                        }
+                        return $this->isRoleTbClass($tbClass, $roleShapeRules) || $this->isToestandsWeergaveTbClass($tbClass);
+                    }));
+
+                    if (! empty($cascadeRows)) {
+                        $tbUris = array_values(array_unique(array_map(fn ($row) => (string) ($row['tb_uri'] ?? ''), $cascadeRows)));
+                        $tbIdByUri = $this->fetchTbIdsByUris($tbUris);
+                        foreach ($cascadeRows as $row) {
+                            $uri = (string) ($row['tb_uri'] ?? '');
+                            if ($uri === '') {
+                                continue;
+                            }
+                            $toInvalidate[] = [
+                                'tb_uri' => $uri,
+                                'tb_class' => (string) ($row['tb_class'] ?? ''),
+                                'tb_id' => $tbIdByUri[$uri] ?? null,
+                            ];
+                        }
+                    }
+                }
+            }
+
+            $triples = '';
+            $seenTbUris = [];
+            foreach ($toInvalidate as $item) {
+                $tbUri = (string) ($item['tb_uri'] ?? '');
+                if ($tbUri === '' || isset($seenTbUris[$tbUri])) {
+                    continue;
+                }
+                $seenTbUris[$tbUri] = true;
+                DB::table('object_mutaties')->insert([
+                    'transactie_id' => $transactieId,
+                    'sjabloon_uri' => (string) ($item['tb_class'] ?? ''),
+                    'object_uri' => $tbUri,
+                    'gegevens_object_in_context_id' => (int) $targetRow->goic_id,
+                    'geproduceerde_toestand_id' => null,
+                    'verwijderde_toestand_id' => isset($item['tb_id']) ? (int) $item['tb_id'] : null,
+                    'datum_tijd' => $now,
+                    'data' => json_encode([
+                        'actie' => 'beeindig_toestand',
+                        'tb_uri' => $tbUri,
+                        'invalidatedAtTime' => $nowIso,
+                    ], JSON_UNESCAPED_SLASHES),
+                    'created_at' => $now,
+                    'updated_at' => $now,
+                ]);
+
+                $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
+                $triples .= "<{$tbUri}> <{$dpm}invalidatedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
+                $triples .= "<{$mutatieUri}> a <{$vwm}ObjectMutatie> .\n";
+                $triples .= "<{$mutatieUri}> <{$vwm}heeftBetrekkingOp> <{$targetRow->goic_uri}> .\n";
+                $triples .= "<{$mutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
+            }
+
+            $this->graphService->update("
+                INSERT DATA {
+                    GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                        {$triples}
+                    }
+                }
+            ");
+
+            DB::commit();
+
+            return response()->json([
+                'ok' => true,
+                'mode' => 'delete',
+                'message' => $deleteType === 'role' ? 'Rol verwijderd.' : 'Toestand verwijderd.',
+            ]);
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            return response()->json([
+                'error' => 'Verwijderen mislukt.',
+                'details' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
     private function normalizeIdentityValue(string $value, string $normalizer): ?string
     {
         $strategy = strtoupper(trim($normalizer));
@@ -1605,5 +1999,337 @@ class MutatieController extends Controller
         }
 
         return [$fromId, $toId];
+    }
+
+    private function hasCrud(?string $flags, string $required): bool
+    {
+        return str_contains(strtoupper((string) ($flags ?? 'CRUD')), strtoupper($required));
+    }
+
+    private function fetchAllowedSjabloonCrudByTbClass(int $transactieSoortId): array
+    {
+        $rows = DB::table('transactie_soort_sjabloon')
+            ->where('transactie_soort_id', $transactieSoortId)
+            ->where('type', 'sjabloon')
+            ->get(['sjabloon_uri', 'crud_flags'])
+            ->all();
+
+        $crudByTbClass = [];
+        foreach ($rows as $row) {
+            $uri = $row->sjabloon_uri ?? null;
+            if (! is_string($uri) || $uri === '') {
+                continue;
+            }
+            $crudByTbClass[$uri] = strtoupper((string) ($row->crud_flags ?? 'CRUD'));
+        }
+
+        return $crudByTbClass;
+    }
+
+    private function isRoleCreateAllowed(?string $roleType, ?string $roleSelector, array $roleCrudBySelector, array $roleShapeRules): bool
+    {
+        foreach ($roleCrudBySelector as $selector => $flags) {
+            if (! $this->hasCrud($flags, 'C')) {
+                continue;
+            }
+            if ($roleSelector === $selector || $roleType === $selector) {
+                return true;
+            }
+
+            $rule = $this->metadataService->resolveRoleShapeRuleFromSelector($selector, $roleShapeRules);
+            $candidateRoleTbClass = $rule['rolTbClass'] ?? null;
+            $candidateRoleType = $rule['rolType'] ?? null;
+            if (is_string($roleSelector) && $roleSelector !== '' && $roleSelector === $candidateRoleTbClass) {
+                return true;
+            }
+            if (is_string($roleType) && $roleType !== '' && $roleType === $candidateRoleType) {
+                return true;
+            }
+        }
+
+        return empty($roleCrudBySelector);
+    }
+
+    private function isRoleDeleteAllowed(int $transactieSoortId, string $roleTbClass, array $roleShapeRules): bool
+    {
+        $rows = DB::table('transactie_soort_sjabloon')
+            ->where('transactie_soort_id', $transactieSoortId)
+            ->where('type', 'rol')
+            ->get(['sjabloon_uri', 'crud_flags'])
+            ->all();
+
+        foreach ($rows as $row) {
+            if (! $this->hasCrud((string) ($row->crud_flags ?? 'CRD'), 'D')) {
+                continue;
+            }
+            $selector = $row->sjabloon_uri ?? null;
+            if (! is_string($selector) || $selector === '') {
+                continue;
+            }
+            if ($selector === $roleTbClass) {
+                return true;
+            }
+
+            $rule = $this->metadataService->resolveRoleShapeRuleFromSelector($selector, $roleShapeRules);
+            $candidateRoleTbClass = $rule['rolTbClass'] ?? null;
+            if (is_string($candidateRoleTbClass) && $candidateRoleTbClass === $roleTbClass) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private function isRoleTbClass(string $tbClass, array $roleShapeRules): bool
+    {
+        if ($tbClass === '') {
+            return false;
+        }
+
+        foreach ($roleShapeRules as $rule) {
+            $candidate = $rule['rolTbClass'] ?? null;
+            if (is_string($candidate) && $candidate === $tbClass) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Voegt automatische role-items toe op basis van regels uit de ontologie/shapes.
+     */
+    private function appendAutoRoleItems(
+        array $roleItems,
+        array $objects,
+        array $objectMeta,
+        array $goicByClass,
+        array $roleShapeRules
+    ): array {
+        $autoRoleRules = $this->metadataService->fetchAutoRoleRules();
+        if (count($autoRoleRules) === 0) {
+            return $roleItems;
+        }
+
+        $objectMetaByClientId = [];
+        foreach ($objectMeta as $meta) {
+            $clientId = $meta['client_id'] ?? null;
+            if (is_string($clientId) && $clientId !== '') {
+                $objectMetaByClientId[$clientId] = $meta;
+            }
+        }
+
+        $newRoleItems = [];
+        foreach ($objects as $object) {
+            $tbClass = (string) ($object['sjabloon_uri'] ?? '');
+            $clientId = (string) ($object['client_id'] ?? '');
+            if ($clientId === '' || empty($objectMetaByClientId[$clientId])) {
+                continue;
+            }
+
+            $fromMeta = $objectMetaByClientId[$clientId];
+            $fromGoicId = isset($fromMeta['goic_id']) ? (int) $fromMeta['goic_id'] : 0;
+            $fromClass = (string) ($fromMeta['target_class'] ?? '');
+            if ($fromGoicId <= 0 || $fromClass === '') {
+                continue;
+            }
+
+            foreach ($autoRoleRules as $rule) {
+                $triggerTbClass = (string) ($rule['triggerTbClass'] ?? '');
+                $rolType = (string) ($rule['rolType'] ?? '');
+                if ($triggerTbClass === '' || $rolType === '' || $triggerTbClass !== $tbClass) {
+                    continue;
+                }
+
+                $shapeRule = $roleShapeRules[$rolType] ?? null;
+                if (! is_array($shapeRule)) {
+                    continue;
+                }
+
+                $expectedFromClass = (string) ($shapeRule['vanClass'] ?? '');
+                $targetClass = (string) ($shapeRule['naarClass'] ?? '');
+                if ($expectedFromClass === '' || $targetClass === '' || $expectedFromClass !== $fromClass) {
+                    continue;
+                }
+
+                $targetGoics = array_values(array_filter($goicByClass[$targetClass] ?? []));
+                if (count($targetGoics) === 0) {
+                    continue;
+                }
+
+                $newRoleItems[] = [
+                    'roleType' => $rolType,
+                    'fromGoicId' => $fromGoicId,
+                    'toId' => null,
+                    'toGoicId' => null,
+                    'toUri' => $targetGoics[0],
+                    'isAuto' => true,
+                ];
+            }
+        }
+
+        if (count($newRoleItems) === 0) {
+            return $roleItems;
+        }
+
+        $existingKeys = [];
+        foreach ($roleItems as $item) {
+            if (! is_array($item)) {
+                continue;
+            }
+            $existingKeys[$this->roleItemSignature($item)] = true;
+        }
+
+        foreach ($newRoleItems as $item) {
+            $signature = $this->roleItemSignature($item);
+            if (isset($existingKeys[$signature])) {
+                continue;
+            }
+            $roleItems[] = $item;
+            $existingKeys[$signature] = true;
+        }
+
+        return $roleItems;
+    }
+
+    private function roleItemSignature(array $roleItem): string
+    {
+        return implode('|', [
+            (string) ($roleItem['roleType'] ?? ''),
+            (string) ($roleItem['roleTbClass'] ?? ''),
+            (string) ($roleItem['fromId'] ?? ''),
+            (string) ($roleItem['fromGoicId'] ?? ''),
+            (string) ($roleItem['toId'] ?? ''),
+            (string) ($roleItem['toGoicId'] ?? ''),
+            (string) ($roleItem['toUri'] ?? ''),
+        ]);
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    private function fetchActiveRoleTbUrisByRoleTypeAndSourceGoic(
+        string $sourceGoicUri,
+        string $roleTbClass,
+        string $roleType,
+        string $fromProperty
+    ): array {
+        if ($sourceGoicUri === '' || $roleTbClass === '' || $roleType === '' || $fromProperty === '') {
+            return [];
+        }
+
+        $query = "
+            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+            SELECT DISTINCT ?tb
+            WHERE {
+                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                    ?tb a <{$roleTbClass}> ;
+                        <{$fromProperty}> <{$sourceGoicUri}> ;
+                        vwm:rolType <{$roleType}> .
+                    FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+                }
+            }
+        ";
+
+        $rows = $this->graphService->query($query);
+        $uris = [];
+        foreach ($rows as $row) {
+            $uri = $row['tb'] ?? null;
+            if (is_string($uri) && $uri !== '') {
+                $uris[] = $uri;
+            }
+        }
+
+        return array_values(array_unique($uris));
+    }
+
+    /**
+     * @return array<int, array{tb_uri:string,tb_class:string|null}>
+     */
+    private function fetchActiveTbRowsForGoic(string $goicUri): array
+    {
+        if ($goicUri === '') {
+            return [];
+        }
+
+        $query = "
+            PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+            SELECT DISTINCT ?tb ?tbClass
+            WHERE {
+                {
+                    ?tb vwm:beschrijftGOIC <{$goicUri}> .
+                }
+                UNION
+                {
+                    ?mutatie a vwm:ObjectMutatie ;
+                             vwm:heeftBetrekkingOp <{$goicUri}> ;
+                             vwm:produceert ?tb .
+                }
+                ?tb rdf:type ?tbClass .
+                FILTER (?tbClass != vwm:ToestandsBeschrijving)
+                FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+            }
+            ORDER BY ?tb
+        ";
+
+        try {
+            $rows = $this->graphService->query($query);
+        } catch (\Throwable $e) {
+            logger()->warning('Kon actieve TB-rows voor cascade niet uit GraphDB lezen', [
+                'message' => $e->getMessage(),
+            ]);
+            return [];
+        }
+
+        $result = [];
+        foreach ($rows as $row) {
+            $tbUri = $row['tb'] ?? null;
+            if (! is_string($tbUri) || $tbUri === '') {
+                continue;
+            }
+            $result[] = [
+                'tb_uri' => $tbUri,
+                'tb_class' => is_string($row['tbClass'] ?? null) ? $row['tbClass'] : null,
+            ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int, string>  $tbUris
+     * @return array<string, int>
+     */
+    private function fetchTbIdsByUris(array $tbUris): array
+    {
+        $uris = array_values(array_unique(array_filter($tbUris, fn ($uri) => is_string($uri) && $uri !== '')));
+        if (empty($uris)) {
+            return [];
+        }
+
+        $rows = DB::table('toestands_beschrijvingen')
+            ->whereIn('rdf_uri', $uris)
+            ->get(['id', 'rdf_uri']);
+
+        $result = [];
+        foreach ($rows as $row) {
+            if (is_string($row->rdf_uri) && $row->rdf_uri !== '') {
+                $result[$row->rdf_uri] = (int) $row->id;
+            }
+        }
+
+        return $result;
+    }
+
+    private function isClassDeleteAllowed(int $transactieSoortId, string $tbClass): bool
+    {
+        if ($tbClass === '') {
+            return false;
+        }
+        $allowed = $this->fetchAllowedSjabloonCrudByTbClass($transactieSoortId);
+        return $this->hasCrud($allowed[$tbClass] ?? null, 'D');
     }
 }
