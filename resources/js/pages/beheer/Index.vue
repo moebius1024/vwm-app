@@ -26,7 +26,7 @@ type Persoon = {
 };
 type User = { id: number; name: string; email: string };
 
-const props = defineProps<{
+defineProps<{
   teams: Team[];
   functieSoorten: FunctieSoort[];
   medewerkers: Medewerker[];
