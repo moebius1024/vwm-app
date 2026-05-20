@@ -15,10 +15,10 @@
     </div>
 
     <div class="mb-6 rounded-xl border border-amber-200/70 bg-amber-50 px-4 py-4 dark:border-amber-300/20 dark:bg-amber-900/20">
-      <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Wat wil je registreren</p>
+      <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Registreren</p>
       <div class="mt-3 flex flex-wrap gap-2">
         <button
-          v-for="sjabloon in sjablonen"
+          v-for="sjabloon in registratieSjablonen"
           :key="sjabloon.sjabloon_uri"
           type="button"
           class="rounded-full border px-4 py-2 text-xs font-semibold transition"
@@ -33,192 +33,221 @@
         </button>
       </div>
     </div>
+    <div :id="registerAnchorId"></div>
 
-    <form @submit.prevent="submitForm" novalidate class="space-y-6">
-      <div v-for="(object, index) in objects" :key="object.id" class="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
-        <div class="mb-1 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
-              {{ object.sjabloonLabel || 'Onbekend sjabloon' }}
-            </h3>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <button
-              v-if="objects.length > 1"
-              type="button"
-              class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-              @click="removeObject(index)"
-            >
-              Verwijderen
-            </button>
-          </div>
-        </div>
-
-        <div
-          v-if="isToestandsWeergaveObject(object)"
-          class="mb-4 rounded-lg border border-amber-200/70 bg-amber-50 px-3 py-3 dark:border-amber-300/30 dark:bg-amber-900/20"
-        >
-          <label class="mb-1 block text-sm font-medium text-amber-900 dark:text-amber-100">
-            Bestaand {{ shortId(object.targetClass || 'object') }}
-          </label>
-
-          <template v-if="getGoicsForObject(object).length === 1">
-            <input
-              type="text"
-              class="h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-amber-900 shadow-sm outline-none dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100"
-              :value="getGoicDisplayName(getGoicsForObject(object)[0])"
-              disabled
-            >
-            <p class="mt-1 text-xs text-amber-700/80 dark:text-amber-100/80">Automatisch gekoppeld (er is maar 1 optie).</p>
-          </template>
-
-          <template v-else-if="getGoicsForObject(object).length > 1">
-            <select
-              v-model="object.existingGoicId"
-              class="h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-amber-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100"
-              required
-            >
-              <option disabled value="">Kies {{ shortId(object.targetClass || 'object') }}</option>
-              <option v-for="goic in getGoicsForObject(object)" :key="goic.id" :value="String(goic.id)">
-                {{ getGoicDisplayName(goic) }}
-              </option>
-            </select>
-          </template>
-
-          <p v-else class="text-xs text-amber-700/80 dark:text-amber-100/80">
-            Geen bestaand {{ shortId(object.targetClass || 'object') }} gevonden in dit dossier.
-          </p>
-        </div>
-
-        <div class="grid gap-4 md:grid-cols-2">
-          <div v-for="veld in object.velden" :key="veld.property" class="flex flex-col gap-0.5">
-            <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
-              {{ veld.label }}
-            </label>
-            <div v-if="veld.type === 'multi-uri'" class="space-y-2">
-              <div
-                v-for="(value, idx) in (object.formData[veld.property] as string[])"
-                :key="idx"
-                class="flex items-center gap-2"
-              >
-                <input
-                  v-model="(object.formData[veld.property] as string[])[idx]"
-                  type="url"
-                  placeholder="Plak de URI van het object"
-                  :data-field-key="fieldErrorKey(object, veld.property)"
-                  class="h-10 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                  :required="veld.required"
-                >
-                <button
-                  v-if="(object.formData[veld.property] as string[]).length > 1"
-                  type="button"
-                  class="inline-flex items-center rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
-                  @click="removeMultiUriValue(object, veld.property, idx)"
-                >
-                  Verwijder
-                </button>
-              </div>
-              <button
-                type="button"
-                class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
-                @click="addMultiUriValue(object, veld.property)"
-              >
-                Nog een toevoegen
-              </button>
-            </div>
-            <div v-else-if="veld.type === 'file'" class="space-y-2">
-              <input
-                type="file"
-                :data-field-key="fieldErrorKey(object, veld.property)"
-                class="h-10 w-full min-w-0 overflow-hidden rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-900 shadow-sm outline-none transition file:mr-2 file:max-w-full file:overflow-hidden file:text-ellipsis file:whitespace-nowrap focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                @change="onFileSelected($event, object, veld)"
-                :required="veld.required"
-                :disabled="isFileFieldLockedForMutation(object)"
-              >
-              <p v-if="isFileFieldLockedForMutation(object)" class="text-xs text-amber-700 dark:text-amber-200">
-                Bij muteren blijft hetzelfde bestand gekoppeld.
-              </p>
-              <p v-if="object.fileUploads[veld.property]?.uploading" class="text-xs text-amber-700 dark:text-amber-200">
-                Uploaden...
-              </p>
-              <p v-else-if="object.fileUploads[veld.property]?.uploadedUri" class="text-xs text-emerald-700 dark:text-emerald-300">
-                Geüpload: {{ object.fileUploads[veld.property]?.fileName || 'bestand' }}
-              </p>
-              <p v-else-if="object.fileUploads[veld.property]?.error" class="text-xs text-red-600 dark:text-red-300">
-                Upload mislukt: {{ object.fileUploads[veld.property]?.error }}
-              </p>
-            </div>
-            <textarea
-              v-else-if="veld.type === 'textarea'"
-              v-model="object.formData[veld.property] as string"
-              rows="4"
-              :data-field-key="fieldErrorKey(object, veld.property)"
-              class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              :required="veld.required"
-            ></textarea>
-            <select
-              v-else-if="isGoicLookupField(veld)"
-              v-model="object.formData[veld.property] as string"
-              :data-field-key="fieldErrorKey(object, veld.property)"
-              class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              :class="fieldWidthClass(veld)"
-              :required="veld.required"
-              @change="delete fieldErrors[fieldErrorKey(object, veld.property)]"
-            >
-              <option value="" disabled>Kies...</option>
-              <option
-                v-for="goic in getGoicsForLookupField(veld)"
-                :key="`lookup-goic-${object.id}-${veld.property}-${goic.id}`"
-                :value="goic.rdf_uri"
-              >
-                {{ getGoicDisplayName(goic) }}
-              </option>
-            </select>
-            <select
-              v-else-if="Array.isArray(veld.options) && veld.options.length > 0"
-              v-model="object.formData[veld.property] as string"
-              :data-field-key="fieldErrorKey(object, veld.property)"
-              class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              :class="fieldWidthClass(veld)"
-              :required="veld.required"
-              @change="onFieldInput(object, veld)"
-            >
-              <option value="" disabled>Kies...</option>
-              <option v-for="option in veld.options" :key="`${veld.property}-${option}`" :value="option">
-                {{ option }}
-              </option>
-            </select>
-            <input
-              v-else
-              v-model="object.formData[veld.property] as string"
-              :type="veld.type"
-              :list="fieldLookupListId(object, veld)"
-              :data-field-key="fieldErrorKey(object, veld.property)"
-              class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-              :class="[fieldWidthClass(veld), veld.type === 'text' ? 'text-xs' : '']"
-              @input="onFieldInput(object, veld)"
-              @blur="onFieldBlur(object, veld)"
-              :required="veld.required"
-            >
-            <datalist
-              v-if="fieldLookupListId(object, veld)"
-              :id="fieldLookupListId(object, veld)!"
-            >
-              <option
-                v-for="option in getFieldLookupOptions(object, veld)"
-                :key="`${fieldLookupListId(object, veld)}-${option}`"
-                :value="option"
-              />
-            </datalist>
-            <p v-if="!activeRoleForSelection && fieldErrors[fieldErrorKey(object, veld.property)]" class="text-xs text-red-600 dark:text-red-300">
-              {{ fieldErrors[fieldErrorKey(object, veld.property)] }}
-            </p>
-          </div>
-        </div>
-
+    <div v-if="toevoegSjablonen.length" class="mb-6 rounded-xl border border-amber-200/70 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-300/20 dark:bg-amber-900/20 dark:text-amber-100">
+      <div class="mb-3">
+        <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Toevoegen</p>
       </div>
 
+      <div class="flex flex-wrap gap-2">
+        <button
+          v-for="sjabloon in toevoegSjablonen"
+          :key="sjabloon.sjabloon_uri"
+          type="button"
+          class="rounded-full border px-4 py-2 text-xs font-semibold transition"
+          :disabled="!!activeMutationTarget"
+          :class="selectedSjabloonUri === sjabloon.sjabloon_uri
+            ? 'border-amber-600 bg-amber-600 text-white shadow-sm'
+            : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100 dark:hover:bg-amber-900/40'
+          "
+          @click="setPrimaryObjectByUri(sjabloon.sjabloon_uri)"
+        >
+          {{ sjabloon.label || shortId(sjabloon.sjabloon_uri) }}
+        </button>
+      </div>
+    </div>
+    <div :id="toevoegAnchorId"></div>
+
+    <Teleport :to="activeObjectAnchorSelector" :disabled="!activeObjectAnchorSelector">
+      <div v-if="showObjectEditor" class="mb-6 rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+        <div v-for="(object, index) in objects" :key="object.id" class="rounded-xl border border-gray-200 p-4 dark:border-gray-700">
+          <div class="mb-1 flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h3 class="text-lg font-semibold text-gray-900 dark:text-white">
+                {{ object.sjabloonLabel || 'Onbekend sjabloon' }}
+              </h3>
+            </div>
+
+            <div class="flex items-center gap-2">
+              <button
+                v-if="objects.length > 1"
+                type="button"
+                class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                @click="removeObject(index)"
+              >
+                Verwijderen
+              </button>
+            </div>
+          </div>
+
+          <div
+            v-if="isToestandsWeergaveObject(object)"
+            class="mb-4 rounded-lg border border-amber-200/70 bg-amber-50 px-3 py-3 dark:border-amber-300/30 dark:bg-amber-900/20"
+          >
+            <label class="mb-1 block text-sm font-medium text-amber-900 dark:text-amber-100">
+              Bestaand {{ shortId(object.targetClass || 'object') }}
+            </label>
+
+            <template v-if="getGoicsForObject(object).length === 1">
+              <input
+                type="text"
+                class="h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-amber-900 shadow-sm outline-none dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100"
+                :value="getGoicDisplayName(getGoicsForObject(object)[0])"
+                disabled
+              >
+              <p class="mt-1 text-xs text-amber-700/80 dark:text-amber-100/80">Automatisch gekoppeld (er is maar 1 optie).</p>
+            </template>
+
+            <template v-else-if="getGoicsForObject(object).length > 1">
+              <select
+                v-model="object.existingGoicId"
+                class="h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-amber-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100"
+                required
+              >
+                <option disabled value="">Kies {{ shortId(object.targetClass || 'object') }}</option>
+                <option v-for="goic in getGoicsForObject(object)" :key="goic.id" :value="String(goic.id)">
+                  {{ getGoicDisplayName(goic) }}
+                </option>
+              </select>
+            </template>
+
+            <p v-else class="text-xs text-amber-700/80 dark:text-amber-100/80">
+              Geen bestaand {{ shortId(object.targetClass || 'object') }} gevonden in dit dossier.
+            </p>
+          </div>
+
+          <div class="grid gap-4 md:grid-cols-2">
+            <div v-for="veld in object.velden" :key="veld.property" class="flex flex-col gap-0.5">
+              <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
+                {{ veld.label }}
+              </label>
+              <div v-if="veld.type === 'multi-uri'" class="space-y-2">
+                <div
+                  v-for="(value, idx) in (object.formData[veld.property] as string[])"
+                  :key="idx"
+                  class="flex items-center gap-2"
+                >
+                  <input
+                    v-model="(object.formData[veld.property] as string[])[idx]"
+                    type="url"
+                    placeholder="Plak de URI van het object"
+                    :data-field-key="fieldErrorKey(object, veld.property)"
+                    class="h-10 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                    :required="veld.required"
+                  >
+                  <button
+                    v-if="(object.formData[veld.property] as string[]).length > 1"
+                    type="button"
+                    class="inline-flex items-center rounded-lg border border-gray-200 px-2 py-2 text-xs font-medium text-gray-600 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-300 dark:hover:bg-gray-800"
+                    @click="removeMultiUriValue(object, veld.property, idx)"
+                  >
+                    Verwijder
+                  </button>
+                </div>
+                <button
+                  type="button"
+                  class="inline-flex items-center rounded-lg border border-gray-200 px-3 py-2 text-xs font-medium text-gray-700 transition hover:bg-gray-50 dark:border-gray-700 dark:text-gray-200 dark:hover:bg-gray-800"
+                  @click="addMultiUriValue(object, veld.property)"
+                >
+                  Nog een toevoegen
+                </button>
+              </div>
+              <div v-else-if="veld.type === 'file'" class="space-y-2">
+                <input
+                  type="file"
+                  :data-field-key="fieldErrorKey(object, veld.property)"
+                  class="h-10 w-full min-w-0 overflow-hidden rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-900 shadow-sm outline-none transition file:mr-2 file:max-w-full file:overflow-hidden file:text-ellipsis file:whitespace-nowrap focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                  @change="onFileSelected($event, object, veld)"
+                  :required="veld.required"
+                  :disabled="isFileFieldLockedForMutation(object)"
+                >
+                <p v-if="isFileFieldLockedForMutation(object)" class="text-xs text-amber-700 dark:text-amber-200">
+                  Bij muteren blijft hetzelfde bestand gekoppeld.
+                </p>
+                <p v-if="object.fileUploads[veld.property]?.uploading" class="text-xs text-amber-700 dark:text-amber-200">
+                  Uploaden...
+                </p>
+                <p v-else-if="object.fileUploads[veld.property]?.uploadedUri" class="text-xs text-emerald-700 dark:text-emerald-300">
+                  Geüpload: {{ object.fileUploads[veld.property]?.fileName || 'bestand' }}
+                </p>
+                <p v-else-if="object.fileUploads[veld.property]?.error" class="text-xs text-red-600 dark:text-red-300">
+                  Upload mislukt: {{ object.fileUploads[veld.property]?.error }}
+                </p>
+              </div>
+              <textarea
+                v-else-if="veld.type === 'textarea'"
+                v-model="object.formData[veld.property] as string"
+                rows="4"
+                :data-field-key="fieldErrorKey(object, veld.property)"
+                class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                :required="veld.required"
+              ></textarea>
+              <select
+                v-else-if="isGoicLookupField(veld)"
+                v-model="object.formData[veld.property] as string"
+                :data-field-key="fieldErrorKey(object, veld.property)"
+                class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                :class="fieldWidthClass(veld)"
+                :required="veld.required"
+                @change="delete fieldErrors[fieldErrorKey(object, veld.property)]"
+              >
+                <option value="" disabled>Kies...</option>
+                <option
+                  v-for="goic in getGoicsForLookupField(veld)"
+                  :key="`lookup-goic-${object.id}-${veld.property}-${goic.id}`"
+                  :value="goic.rdf_uri"
+                >
+                  {{ getGoicDisplayName(goic) }}
+                </option>
+              </select>
+              <select
+                v-else-if="Array.isArray(veld.options) && veld.options.length > 0"
+                v-model="object.formData[veld.property] as string"
+                :data-field-key="fieldErrorKey(object, veld.property)"
+                class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                :class="fieldWidthClass(veld)"
+                :required="veld.required"
+                @change="onFieldInput(object, veld)"
+              >
+                <option value="" disabled>Kies...</option>
+                <option v-for="option in veld.options" :key="`${veld.property}-${option}`" :value="option">
+                  {{ option }}
+                </option>
+              </select>
+              <input
+                v-else
+                v-model="object.formData[veld.property] as string"
+                :type="veld.type"
+                :list="fieldLookupListId(object, veld)"
+                :data-field-key="fieldErrorKey(object, veld.property)"
+                class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
+                :class="[fieldWidthClass(veld), veld.type === 'text' ? 'text-xs' : '']"
+                @input="onFieldInput(object, veld)"
+                @blur="onFieldBlur(object, veld)"
+                :required="veld.required"
+              >
+              <datalist
+                v-if="fieldLookupListId(object, veld)"
+                :id="fieldLookupListId(object, veld)!"
+              >
+                <option
+                  v-for="option in getFieldLookupOptions(object, veld)"
+                  :key="`${fieldLookupListId(object, veld)}-${option}`"
+                  :value="option"
+                />
+              </datalist>
+              <p v-if="!activeRoleForSelection && fieldErrors[fieldErrorKey(object, veld.property)]" class="text-xs text-red-600 dark:text-red-300">
+                {{ fieldErrors[fieldErrorKey(object, veld.property)] }}
+              </p>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </Teleport>
+
+    <form @submit.prevent="submitForm" novalidate class="space-y-6">
       <div v-if="roleGroups.length && !activeMutationTarget" class="rounded-xl border border-amber-200/70 bg-amber-50 px-4 py-4 text-sm text-amber-900 dark:border-amber-300/20 dark:bg-amber-900/20 dark:text-amber-100">
         <div class="mb-3">
           <p class="text-xs font-semibold uppercase tracking-wide text-amber-700 dark:text-amber-200">Rollen</p>
@@ -442,6 +471,61 @@ const activeMutationTarget = ref<NonNullable<typeof props.mutationTarget> | null
 const fieldErrorKey = (object: ObjectBlock, property: string) => `${object.id}::${property}`;
 const hasCrud = (flags: string | null | undefined, letter: 'C' | 'R' | 'U' | 'D') =>
   String(flags ?? '').toUpperCase().includes(letter);
+
+const isToestandsWeergaveSjabloon = (sjabloon: SjabloonSummary) => {
+  const uri = typeof sjabloon.sjabloon_uri === 'string' ? sjabloon.sjabloon_uri : '';
+  const targetClass = typeof sjabloon.target_class === 'string' ? sjabloon.target_class : '';
+
+  return uri.includes('ToestandsWeergave') || targetClass.includes('ToestandsWeergave');
+};
+
+const orderedSjablonen = computed(() =>
+  [...sjablonen.value].sort((a, b) => (a.volgorde ?? 1) - (b.volgorde ?? 1))
+);
+
+const registratieSjablonen = computed(() =>
+  orderedSjablonen.value.filter((sjabloon) => !isToestandsWeergaveSjabloon(sjabloon))
+);
+
+const toevoegSjablonen = computed(() =>
+  orderedSjablonen.value.filter((sjabloon) => isToestandsWeergaveSjabloon(sjabloon))
+);
+
+const registerAnchorId = computed(() => `register-anchor-${props.caseId}`);
+const toevoegAnchorId = computed(() => `toevoeg-anchor-${props.caseId}`);
+
+const selectedSjabloonGroup = computed<'register' | 'toevoeg' | null>(() => {
+  const selectedUri = selectedSjabloonUri.value;
+
+  if (!selectedUri) {
+    return null;
+  }
+
+  const selected = sjablonen.value.find((item) => item.sjabloon_uri === selectedUri);
+
+  if (!selected) {
+    return null;
+  }
+
+  return isToestandsWeergaveSjabloon(selected) ? 'toevoeg' : 'register';
+});
+
+const activeObjectAnchorSelector = computed(() => {
+  if (selectedSjabloonGroup.value === 'register') {
+    return `#${registerAnchorId.value}`;
+  }
+
+  if (selectedSjabloonGroup.value === 'toevoeg') {
+    return `#${toevoegAnchorId.value}`;
+  }
+
+  return null;
+});
+
+const showObjectEditor = computed(() => {
+  return !activeRoleForSelection.value && selectedSjabloonGroup.value !== null && objects.value.length > 0;
+});
+
 const clearValidationUi = () => {
   fieldErrors.value = {};
   roleError.value = '';
@@ -1196,8 +1280,7 @@ const loadForTransactie = async () => {
       ];
     }
 
-    const ordered = [...sjablonen.value].sort((a, b) => (a.volgorde ?? 1) - (b.volgorde ?? 1));
-    const primary = ordered[0];
+    const primary = registratieSjablonen.value[0] ?? orderedSjablonen.value[0];
 
     if (primary) {
       await setPrimaryObjectByUri(primary.sjabloon_uri);
