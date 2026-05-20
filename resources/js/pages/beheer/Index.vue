@@ -59,6 +59,12 @@ const openTeamEdit = (team: Team) => {
   teamEdit.code = team.code;
 };
 
+const cancelTeamEdit = () => {
+  teamEdit.id = null;
+  teamEdit.reset();
+  teamEdit.clearErrors();
+};
+
 const openMedewerkerEdit = (m: Medewerker) => {
   medewerkerEdit.id = m.id;
   medewerkerEdit.medewerker_nummer = m.medewerker_nummer;
@@ -67,12 +73,24 @@ const openMedewerkerEdit = (m: Medewerker) => {
   medewerkerEdit.functie_soort_id = m.functie_soort_id;
 };
 
+const cancelMedewerkerEdit = () => {
+  medewerkerEdit.id = null;
+  medewerkerEdit.reset();
+  medewerkerEdit.clearErrors();
+};
+
 const openPersoonEdit = (p: Persoon) => {
   persoonEdit.id = p.id;
   persoonEdit.naam = p.naam;
   persoonEdit.medewerker_nummer = p.medewerker_nummer ?? '';
   persoonEdit.team_id = p.team_id;
   persoonEdit.functie_soort_id = p.functie_soort_id;
+};
+
+const cancelPersoonEdit = () => {
+  persoonEdit.id = null;
+  persoonEdit.reset();
+  persoonEdit.clearErrors();
 };
 
 const isMedewerkerInvoer = () => persoonEdit.medewerker_nummer.trim() !== '';
@@ -110,7 +128,10 @@ const isMedewerkerInvoer = () => persoonEdit.medewerker_nummer.trim() !== '';
         <form v-if="teamEdit.id" class="mt-4 space-y-2 border-t pt-4" @submit.prevent="teamEdit.patch(`/beheer/teams/${teamEdit.id}`)">
           <input v-model="teamEdit.naam" class="h-10 w-full rounded border px-3" required>
           <input v-model="teamEdit.code" class="h-10 w-full rounded border px-3" required>
-          <button class="rounded bg-gray-800 px-3 py-2 text-sm font-semibold text-white" :disabled="teamEdit.processing">Opslaan</button>
+          <div class="flex items-center gap-2">
+            <button class="rounded bg-gray-800 px-3 py-2 text-sm font-semibold text-white" :disabled="teamEdit.processing">Opslaan</button>
+            <button type="button" class="rounded border px-3 py-2 text-sm font-semibold" @click="cancelTeamEdit">Annuleren</button>
+          </div>
         </form>
       </section>
 
@@ -141,7 +162,10 @@ const isMedewerkerInvoer = () => persoonEdit.medewerker_nummer.trim() !== '';
             <option :value="null">Geen user</option>
             <option v-for="u in users" :key="u.id" :value="u.id">#{{ u.id }} · {{ u.email }}</option>
           </select>
-          <button class="rounded bg-gray-800 px-3 py-2 text-sm font-semibold text-white" :disabled="medewerkerEdit.processing">Opslaan</button>
+          <div class="flex items-center gap-2">
+            <button class="rounded bg-gray-800 px-3 py-2 text-sm font-semibold text-white" :disabled="medewerkerEdit.processing">Opslaan</button>
+            <button type="button" class="rounded border px-3 py-2 text-sm font-semibold" @click="cancelMedewerkerEdit">Annuleren</button>
+          </div>
         </form>
       </section>
 
@@ -182,7 +206,10 @@ const isMedewerkerInvoer = () => persoonEdit.medewerker_nummer.trim() !== '';
             <option :value="null">Geen team</option>
             <option v-for="team in teams" :key="team.id" :value="team.id">{{ team.naam }}</option>
           </select>
-          <button class="rounded bg-gray-800 px-3 py-2 text-sm font-semibold text-white" :disabled="persoonEdit.processing">Opslaan</button>
+          <div class="flex items-center gap-2">
+            <button class="rounded bg-gray-800 px-3 py-2 text-sm font-semibold text-white" :disabled="persoonEdit.processing">Opslaan</button>
+            <button type="button" class="rounded border px-3 py-2 text-sm font-semibold" @click="cancelPersoonEdit">Annuleren</button>
+          </div>
         </form>
       </section>
     </div>
