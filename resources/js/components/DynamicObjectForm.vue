@@ -491,8 +491,10 @@ const applyLookupRecordToObject = (object: ObjectBlock, endpoint: string, record
 
 const updateFieldLookupOptions = (object: ObjectBlock, veld: Veld, options: unknown) => {
   const key = fieldErrorKey(object, veld.property);
+
   if (!Array.isArray(options)) {
     delete fieldLookupOptions.value[key];
+
     return;
   }
 
@@ -614,6 +616,7 @@ const fieldLookupListId = (object: ObjectBlock, veld: Veld) => {
   if (veld.type !== 'text') {
     return null;
   }
+
   if (!veld.lookup?.endpoint) {
     return null;
   }
@@ -623,14 +626,17 @@ const fieldLookupListId = (object: ObjectBlock, veld: Veld) => {
 
 const getFieldLookupOptions = (object: ObjectBlock, veld: Veld) => {
   const key = fieldErrorKey(object, veld.property);
+
   return fieldLookupOptions.value[key] ?? [];
 };
 
 const fieldWidthClass = (veld: Veld) => {
   const width = (veld.field_width ?? '').toLowerCase();
+
   if (width === 'sm' || width === 'small' || width === 'kort') {
     return 'w-44 max-w-full';
   }
+
   if (width === 'md' || width === 'medium') {
     return 'w-64 max-w-full';
   }
@@ -701,8 +707,10 @@ const loadClassLabels = async () => {
   });
 
   const uris = Array.from(classUris);
+
   if (!uris.length) {
     labelMap.value = {};
+
     return;
   }
 
@@ -777,6 +785,7 @@ const loadSjabloonByUri = async (uri: string): Promise<SjabloonResponse | null> 
 
 const setPrimaryObjectByUri = async (uri: string | null) => {
   clearValidationUi();
+
   if (!uri) {
 return;
 }
@@ -909,6 +918,7 @@ const roleButtonLabel = (role: AllowedRole) => {
   const base = (role.label && role.label.trim() !== '')
     ? role.label
     : shortId(role.tb_class);
+
   return stripRoleTypePrefix(base);
 };
 
@@ -939,6 +949,7 @@ const getGoicDisplayName = (goic: GoicItem) => {
   }
 
   const classLabel = labelMap.value[classUri] ?? shortId(classUri);
+
   return `${classLabel} (#${goic.id})`;
 };
 
@@ -986,6 +997,7 @@ const isGoicLookupField = (veld: Veld) => {
 
 const getGoicsForLookupField = (veld: Veld) => {
   const classUri = typeof veld.lookup?.class_uri === 'string' ? veld.lookup.class_uri.trim() : '';
+
   if (classUri === '') {
 return [];
 }
@@ -996,17 +1008,21 @@ return [];
 const syncExistingGoicSelectionForObject = (object: ObjectBlock) => {
   if (!isToestandsWeergaveObject(object)) {
     object.existingGoicId = '';
+
     return;
   }
 
   const options = getGoicsForObject(object);
+
   if (options.length === 1) {
     object.existingGoicId = String(options[0].id);
+
     return;
   }
 
   if (options.length > 1 && object.existingGoicId) {
     const stillValid = options.some((goic) => String(goic.id) === object.existingGoicId);
+
     if (stillValid) {
       return;
     }
@@ -1041,6 +1057,7 @@ const focusFieldByErrorKey = (errorKey: string) => {
 
   const selector = `[data-field-key="${errorKey}"]`;
   const element = document.querySelector(selector) as HTMLElement | null;
+
   if (!element) {
     return;
   }
@@ -1075,6 +1092,7 @@ const validateBeforeSubmit = () => {
 
     if (!activeRoleSelection.value.fromGoicId || !activeRoleSelection.value.toGoicId) {
       roleError.value = 'Kies beide objecten voor de geselecteerde rol.';
+
       return false;
     }
 
@@ -1097,6 +1115,7 @@ const validateBeforeSubmit = () => {
 
       const key = fieldErrorKey(object, veld.property);
       nextFieldErrors[key] = 'Dit veld is verplicht.';
+
       if (!firstErrorKey) {
         firstErrorKey = key;
       }
@@ -1107,6 +1126,7 @@ const validateBeforeSubmit = () => {
 
   if (firstErrorKey) {
     focusFieldByErrorKey(firstErrorKey);
+
     return false;
   }
 
@@ -1184,6 +1204,7 @@ const loadForTransactie = async () => {
     } else {
       objects.value = [initObject(sjabloon)];
     }
+
     activeMutationTarget.value = null;
 
     objects.value.forEach((object) => syncExistingGoicSelectionForObject(object));
@@ -1243,6 +1264,7 @@ const submitForm = async () => {
       }
 
       const options = getGoicsForObject(object);
+
       if (options.length <= 1) {
         return false;
       }
@@ -1331,6 +1353,7 @@ return;
 
 const applyMutationTarget = async (target: NonNullable<typeof props.mutationTarget>) => {
   const sjabloon = await loadSjabloonByUri(target.sjabloon_uri);
+
   if (!sjabloon) {
     return;
   }
@@ -1368,9 +1391,11 @@ watch(
   async (target) => {
     if (!target) {
       activeMutationTarget.value = null;
+
       if (objects.value.length === 1 && selectedSjabloonUri.value) {
         await loadForTransactie();
       }
+
       return;
     }
 
