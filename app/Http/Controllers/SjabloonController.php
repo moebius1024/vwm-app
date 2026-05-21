@@ -115,6 +115,7 @@ class SjabloonController extends Controller
             'velden' => $primarySjabloon['velden'] ?? [],
             'allowed_sjablonen' => $allowed,
             'allowed_roles' => $allowedRoles,
+            'class_hierarchy' => $this->metadataService->fetchSubclassClosureMap(),
         ]);
     }
 

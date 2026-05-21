@@ -438,6 +438,36 @@ class SjabloonMetadataService
         return $map;
     }
 
+    public function fetchSubclassClosureMap(): array
+    {
+        $query = '
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            SELECT ?child ?parent
+            WHERE {
+                GRAPH <'.self::ONTOLOGY_GRAPH.'> {
+                    ?child rdfs:subClassOf ?parent .
+                }
+            }
+        ';
+        $rows = $this->graphService->query($query);
+        $map = [];
+        foreach ($rows as $row) {
+            $child = $row['child'] ?? null;
+            $parent = $row['parent'] ?? null;
+            if (! is_string($child) || ! is_string($parent) || $child === '' || $parent === '') {
+                continue;
+            }
+            if (! isset($map[$parent])) {
+                $map[$parent] = [];
+            }
+            if (! in_array($child, $map[$parent], true)) {
+                $map[$parent][] = $child;
+            }
+        }
+
+        return $map;
+    }
+
     public function fetchRelatieRegels(): array
     {
         $query = '

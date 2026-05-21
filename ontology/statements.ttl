@@ -2,11 +2,16 @@
   <http://www.w3.org/2000/01/rdf-schema#label> "Incident"@nl .
 
 <http://ontologie.politie.nl/def/dpm#Onderneming> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/dpm#Party>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Onderneming"@nl .
 
 <http://ontologie.politie.nl/def/dpm#Person> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/dpm#Party>;
   <http://www.w3.org/2000/01/rdf-schema#comment> "Een individu in de context van een onderzoek.";
   <http://www.w3.org/2000/01/rdf-schema#label> "Persoon"@nl .
+
+<http://ontologie.politie.nl/def/dpm#Party> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Partij"@nl .
 
 <http://ontologie.politie.nl/def/dpm#Vehicle> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Voertuig"@nl .
@@ -19,6 +24,16 @@
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Geboortedatum";
   <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#date> .
+
+<http://ontologie.politie.nl/def/dpm#emailAddress> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Emailadres";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
+
+<http://ontologie.politie.nl/def/dpm#telephoneNumber> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Telefoonnummer";
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
 
 <http://ontologie.politie.nl/def/dpm#brand> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Vehicle>;
@@ -132,6 +147,11 @@
 <http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Person>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Persoon";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#ContactGegevens> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Party>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "ContactGegevens";
   <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
 
 <http://ontologie.politie.nl/def/vwm#PersoonSignalement> a <http://www.w3.org/2002/07/owl#Class>;

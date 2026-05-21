@@ -478,6 +478,7 @@ const KENTEKEN_LOOKUP_DEBOUNCE_MS = 500;
 const activeMutationTarget = ref<NonNullable<typeof props.mutationTarget> | null>(null);
 const selectedSjabloonSelectionMode = ref<'default' | 'attach-existing'>('default');
 const selectedSjabloonGroupOverride = ref<'register' | 'toevoeg' | null>(null);
+const classHierarchy = ref<Record<string, string[]>>({});
 
 const fieldErrorKey = (object: ObjectBlock, property: string) => `${object.id}::${property}`;
 const hasCrud = (flags: string | null | undefined, letter: 'C' | 'R' | 'U' | 'D' | 'A') =>
@@ -1204,7 +1205,26 @@ const getGoicsForClass = (classUri: string | null) => {
 return [];
 }
 
-  return goicsByClass.value[classUri] ?? [];
+  const targets = new Set<string>([classUri]);
+  const queue = [classUri];
+
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    const children = classHierarchy.value[current] ?? [];
+    children.forEach((child) => {
+      if (!targets.has(child)) {
+        targets.add(child);
+        queue.push(child);
+      }
+    });
+  }
+
+  const out: GoicItem[] = [];
+  targets.forEach((uri) => {
+    (goicsByClass.value[uri] ?? []).forEach((goic) => out.push(goic));
+  });
+
+  return out;
 };
 
 const getGoicsForObject = (object: ObjectBlock) => {
@@ -1406,10 +1426,12 @@ const loadForTransactie = async () => {
       transactie_naam: string;
       allowed_sjablonen?: SjabloonSummary[];
       allowed_roles?: AllowedRole[];
+      class_hierarchy?: Record<string, string[]>;
     };
     transactieNaam.value = sjabloon.transactie_naam;
     roleSelections.value = {};
     allowedRoles.value = sjabloon.allowed_roles ?? [];
+    classHierarchy.value = sjabloon.class_hierarchy ?? {};
 
     if (sjabloon.allowed_sjablonen && sjabloon.allowed_sjablonen.length) {
       sjablonen.value = sjabloon.allowed_sjablonen.filter((item) =>
@@ -1564,6 +1586,17 @@ return;
     const response = await axios.post(apiUrl('/api/mutatie'), payload);
     alert(mutateModeActive ? 'Succes! Mutatie opgeslagen.' : 'Succes! Object aangemaakt.');
     console.log('Response:', response.data);
+
+    if (!roleModeActive && objects.value.length > 0) {
+      const current = objects.value[0];
+      const reloaded = await loadSjabloonByUri(current.sjabloonUri);
+
+      if (reloaded) {
+        objects.value = [initObject(reloaded, current.attachToExisting ? 'attach-existing' : 'default')];
+        syncExistingGoicSelectionForObject(objects.value[0]);
+      }
+    }
+
     activeMutationTarget.value = null;
     emit('saved');
   } catch (error: unknown) {

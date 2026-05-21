@@ -24,6 +24,21 @@ vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
     sh:order 3 ;
   ] .
 
+vwm:ContactGegevensShape a sh:NodeShape ;
+  sh:targetClass vwm:ContactGegevens ;
+  sh:property [
+    sh:path dpm:emailAddress ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:telephoneNumber ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
 vwm:IncidentBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:IncidentBeschrijving ;
   sh:property [

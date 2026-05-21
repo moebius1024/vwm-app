@@ -223,6 +223,7 @@ class MutatieController extends Controller
         }
 
         $goicTargetClassMap = $this->getGoicTargetClassMapForCase($base['case_id']);
+        $classHierarchy = $this->metadataService->fetchSubclassClosureMap();
         $goicUriById = [];
         if (! empty($goicTargetClassMap)) {
             $goicUriById = DB::table('gegevens_objecten_in_context')
@@ -244,7 +245,7 @@ class MutatieController extends Controller
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
             $attachToExisting = ! empty($object['attach_to_existing']);
             $isToestandsWeergave = $this->isToestandsWeergaveTbClass($tbClass);
-            $candidateGoicIds = $goicIdsByClass[$targetClass] ?? [];
+            $candidateGoicIds = $this->resolveGoicIdsForTargetClass($targetClass, $goicIdsByClass, $classHierarchy);
 
             // In mutatiemodus schrijven we altijd op het gekozen bestaande GOIC.
             if ($mode === 'mutate' && $mutationTargetMeta) {
@@ -268,7 +269,7 @@ class MutatieController extends Controller
                     ], 422);
                 }
 
-                if ($existingClass !== $targetClass) {
+                if (! $this->isClassAssignable($targetClass, $existingClass, $classHierarchy)) {
                     return response()->json([
                         'error' => "Geselecteerd object heeft class {$existingClass}, verwacht {$targetClass}.",
                     ], 422);
@@ -2224,6 +2225,41 @@ class MutatieController extends Controller
         }
 
         return false;
+    }
+
+    private function isClassAssignable(string $expectedClass, string $actualClass, array $classHierarchy): bool
+    {
+        if ($expectedClass === $actualClass) {
+            return true;
+        }
+
+        $children = $classHierarchy[$expectedClass] ?? [];
+
+        return in_array($actualClass, $children, true);
+    }
+
+    private function resolveGoicIdsForTargetClass(string $targetClass, array $goicIdsByClass, array $classHierarchy): array
+    {
+        if ($targetClass === '') {
+            return [];
+        }
+
+        $targets = [$targetClass];
+        $children = $classHierarchy[$targetClass] ?? [];
+        foreach ($children as $child) {
+            if (is_string($child) && $child !== '') {
+                $targets[] = $child;
+            }
+        }
+
+        $ids = [];
+        foreach (array_values(array_unique($targets)) as $classUri) {
+            foreach (($goicIdsByClass[$classUri] ?? []) as $goicId) {
+                $ids[] = $goicId;
+            }
+        }
+
+        return array_values(array_unique($ids));
     }
 
     /**
