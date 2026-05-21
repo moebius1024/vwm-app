@@ -2,6 +2,7 @@
 import { Head, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, ref, watch } from 'vue';
+import { toestandSortRank } from '@/lib/toestandSort';
 import { start } from '@/routes/cases';
 
 type CaseItem = {
@@ -85,6 +86,29 @@ const fieldOrderByTbClass = ref<Record<string, Record<string, number>>>({});
 const followBusyGoicId = ref<number | null>(null);
 const followError = ref<string>('');
 const followMessage = ref<string>('');
+
+const dossierNameById = computed<Record<number, string>>(() => {
+  const map: Record<number, string> = {};
+  (props.dossiers ?? []).forEach((dossier) => {
+    map[dossier.id] = dossier.naam;
+  });
+
+  return map;
+});
+
+const dossierTitle = (dossier: DossierItem) => {
+  if (dossier.parent_id) {
+    const parentName = dossierNameById.value[dossier.parent_id] ?? `#${dossier.parent_id}`;
+
+    return `Sub-Dossier ${dossier.naam} van ${parentName}`;
+  }
+
+  if (dossier.naam.trim().toLowerCase() === 'parent') {
+    return dossier.naam;
+  }
+
+  return `Dossier ${dossier.naam}`;
+};
 
 const hasLinkedGoics = (goic: GoicItem) =>
   !!goic.go_uri && (goic.linked_goic_count ?? 0) > 1;
@@ -338,7 +362,20 @@ const hasVisibleTbContent = (tb: ToestandItem, goic: GoicItem) => {
 };
 
 const visibleToestanden = (goic: GoicItem) => {
-  return goic.toestanden.filter((tb) => hasVisibleTbContent(tb, goic));
+  return goic.toestanden
+    .filter((tb) => hasVisibleTbContent(tb, goic))
+    .map((tb, index) => ({ tb, index }))
+    .sort((a, b) => {
+      const diff = toestandSortRank(a.tb.tb_class ?? a.tb.sjabloon_uri ?? '')
+        - toestandSortRank(b.tb.tb_class ?? b.tb.sjabloon_uri ?? '');
+
+      if (diff !== 0) {
+        return diff;
+      }
+
+      return a.index - b.index;
+    })
+    .map((item) => item.tb);
 };
 
 const visibleGoics = (dossier: DossierItem) => {
@@ -939,7 +976,7 @@ watch(() => props.dossiers, () => {
           <div v-if="dossiers && dossiers.length" class="space-y-4">
             <div v-for="dossier in dossiers" :key="dossier.id" class="rounded-xl border border-gray-200 p-5 dark:border-gray-700">
               <div class="flex flex-col gap-1">
-                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ dossier.naam }}</h3>
+                <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ dossierTitle(dossier) }}</h3>
               </div>
 
               <div v-if="visibleGoics(dossier).length" class="mt-4 space-y-3">
@@ -1040,7 +1077,7 @@ watch(() => props.dossiers, () => {
                   </div>
                 </div>
               </div>
-              <div v-else class="mt-3 text-xs text-gray-500 dark:text-gray-400">Geen GOICs gevonden.</div>
+              <div v-else class="mt-3 text-xs text-gray-500 dark:text-gray-400">Geen inhoud gevonden.</div>
             </div>
           </div>
           <div v-else class="rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">

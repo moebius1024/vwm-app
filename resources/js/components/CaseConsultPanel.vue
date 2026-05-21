@@ -2,6 +2,7 @@
 import { Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import { ref, watch } from 'vue';
+import { toestandSortRank } from '@/lib/toestandSort';
 
 type ToestandItem = {
   mutatie_id: number;
@@ -76,6 +77,7 @@ const fieldOrderByTbClass = ref<Record<string, Record<string, number>>>({});
 const classOrder = ref<Record<string, number>>({});
 const classCrudMap = ref<Record<string, string>>({});
 const sjabloonCrudMap = ref<Record<string, string>>({});
+const sjabloonOrderMap = ref<Record<string, number>>({});
 const roleCrudMap = ref<Record<string, string>>({});
 const roleCrudByTypeMap = ref<Record<string, string>>({});
 
@@ -530,6 +532,7 @@ const loadSjabloonOrder = async () => {
     classOrder.value = {};
     classCrudMap.value = {};
     sjabloonCrudMap.value = {};
+    sjabloonOrderMap.value = {};
     roleCrudMap.value = {};
     roleCrudByTypeMap.value = {};
 
@@ -543,6 +546,7 @@ const loadSjabloonOrder = async () => {
     const map: Record<string, number> = {};
     const crudByClass: Record<string, string> = {};
     const crudBySjabloon: Record<string, string> = {};
+    const orderBySjabloon: Record<string, number> = {};
     const crudByRole: Record<string, string> = {};
     const crudByRoleType: Record<string, string> = {};
     allowed.forEach((item: { target_class?: string | null; volgorde?: number }, index: number) => {
@@ -556,6 +560,7 @@ return;
 
       if (uri) {
         crudBySjabloon[uri] = String((item as { crud_flags?: string | null }).crud_flags ?? 'CRUD').toUpperCase();
+        orderBySjabloon[uri] = item.volgorde ?? index + 1;
       }
     });
     allowedRoles.forEach((item: { tb_class?: string | null; role_type?: string | null; crud_flags?: string | null }) => {
@@ -572,6 +577,7 @@ return;
     classOrder.value = map;
     classCrudMap.value = crudByClass;
     sjabloonCrudMap.value = crudBySjabloon;
+    sjabloonOrderMap.value = orderBySjabloon;
     roleCrudMap.value = crudByRole;
     roleCrudByTypeMap.value = crudByRoleType;
   } catch (error) {
@@ -579,6 +585,7 @@ return;
     classOrder.value = {};
     classCrudMap.value = {};
     sjabloonCrudMap.value = {};
+    sjabloonOrderMap.value = {};
     roleCrudMap.value = {};
     roleCrudByTypeMap.value = {};
   }
@@ -695,25 +702,28 @@ const visibleToestanden = (goic: GoicItem) => {
     return hasCrud(flags ?? 'CRUD', 'R');
   });
 
-  const rank = (tb: ToestandItem) => {
-    if (isRoleToestand(tb)) {
-      return 2;
-    }
-
-    if (isToestandsWeergaveToestand(tb)) {
-      return 1;
-    }
-
-    return 0;
-  };
-
   return filtered
     .map((tb, index) => ({ tb, index }))
     .sort((a, b) => {
-      const diff = rank(a.tb) - rank(b.tb);
+      const aKey = a.tb.tb_class ?? a.tb.sjabloon_uri ?? '';
+      const bKey = b.tb.tb_class ?? b.tb.sjabloon_uri ?? '';
+      const diff = toestandSortRank(aKey, {
+        isRole: isRoleToestand(a.tb),
+        isToestandsWeergave: isToestandsWeergaveToestand(a.tb),
+      }) - toestandSortRank(bKey, {
+        isRole: isRoleToestand(b.tb),
+        isToestandsWeergave: isToestandsWeergaveToestand(b.tb),
+      });
 
       if (diff !== 0) {
         return diff;
+      }
+
+      const aOrder = aKey ? (sjabloonOrderMap.value[aKey] ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+      const bOrder = bKey ? (sjabloonOrderMap.value[bKey] ?? Number.MAX_SAFE_INTEGER) : Number.MAX_SAFE_INTEGER;
+
+      if (aOrder !== bOrder) {
+        return aOrder - bOrder;
       }
 
       return a.index - b.index;
