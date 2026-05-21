@@ -145,6 +145,7 @@ const fieldLabelFor = (key: string) => {
 
 const isAssociationLikeField = (key: string) => {
   const normalized = key.trim().toLowerCase();
+
   return normalized === 'producedattime'
     || normalized === 'targetobject'
     || normalized === 'ownedobject'
@@ -185,6 +186,7 @@ const firstUriFromValue = (value: unknown): string | null => {
 
 const bestandViewUrl = (value: unknown) => {
   const uri = firstUriFromValue(value);
+
   if (!uri) {
     return null;
   }
@@ -290,6 +292,7 @@ const shouldSkipFieldForGoic = (key: string, value: unknown, goic: GoicItem) => 
   }
 
   const keyLabel = fieldLabelFor(key).toLowerCase();
+
   if (keyLabel === 'beschrijving' && typeof value === 'string' && value.toLowerCase().startsWith('verwijst naar goic ')) {
     return true;
   }
@@ -310,6 +313,7 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
     if (orderMap) {
       const aOrder = orderMap[aKey] ?? Number.MAX_SAFE_INTEGER;
       const bOrder = orderMap[bKey] ?? Number.MAX_SAFE_INTEGER;
+
       if (aOrder !== bOrder) {
         return aOrder - bOrder;
       }
@@ -321,6 +325,7 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
 
 const isAssociationToestand = (tb: ToestandItem) => {
   const value = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+
   return value.includes('dataobjectassociation');
 };
 
@@ -344,6 +349,7 @@ const visibleGoics = (dossier: DossierItem) => {
 
 const visibleFollowSourceEntries = (goic: GoicItem): [string, unknown][] => {
   const state = goic.follow_info?.source_state;
+
   if (!state || isAssociationToestand(state)) {
     return [];
   }
@@ -408,9 +414,25 @@ return;
         }
       }
 
-      const display = identifierValue ? `${classLabel}: ${identifierValue}` : classLabel;
+      const pickReadableIdentifier = (value: string) => {
+        const parts = value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+
+        if (parts.length === 0) {
+          return '';
+        }
+
+        const nonNumeric = parts.find((item) => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(item));
+
+        return nonNumeric ?? parts[0];
+      };
+
+      const readableIdentifier = pickReadableIdentifier(identifierValue);
+      const display = readableIdentifier
+        ? `${classLabel} #${goic.id}, ${readableIdentifier}`
+        : `${classLabel} #${goic.id}`;
       map[goic.rdf_uri] = display;
       tailMap[shortId(goic.rdf_uri)] = display;
+
       if (goic.go_uri && !goMap[goic.go_uri]) {
         goMap[goic.go_uri] = display;
       }
@@ -448,6 +470,7 @@ const goicClassLabel = (goic: GoicItem) => {
 
 const followedRegistrationTitle = (goic: GoicItem) => {
   const classLabel = goicClassLabel(goic);
+
   return classLabel ? `Gevolgde ${classLabel} Registratie` : 'Gevolgde Registratie';
 };
 
@@ -484,6 +507,7 @@ const canFollowGoic = (goic: GoicItem) => {
 
   const hasVolgbareToestand = goic.toestanden.some((tb) => {
     const tbClass = tb.tb_class ?? tb.sjabloon_uri ?? null;
+
     return typeof tbClass === 'string' && tbClass.length > 0;
   });
 
@@ -502,6 +526,7 @@ const followGoic = async (goic: GoicItem) => {
     '3. DataObjectAssociation wordt vastgelegd.\n' +
     '4. Stap 1 en 3 worden als ObjectMutatie in SQLite opgeslagen.'
   );
+
   if (!ok) {
     return;
   }
@@ -509,6 +534,7 @@ const followGoic = async (goic: GoicItem) => {
   followBusyGoicId.value = goic.id;
   followError.value = '';
   followMessage.value = '';
+
   try {
     const response = await axios.post(apiUrl('/api/goic/volg'), {
       case_id: props.followTargetCaseId,
@@ -517,6 +543,7 @@ const followGoic = async (goic: GoicItem) => {
     followMessage.value = response.data?.message ?? `GOIC wordt nu gevolgd (nieuw GOIC #${response.data?.goic_id ?? '?'})`;
   } catch (error) {
     console.error('Fout bij volgen GOIC:', error);
+
     if (axios.isAxiosError(error)) {
       const apiError = error.response?.data?.error;
       const apiMessage = error.response?.data?.message;
@@ -577,6 +604,7 @@ return label;
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
+
     if (trimmed !== '' && goicDisplayByTail.value[trimmed]) {
       return goicDisplayByTail.value[trimmed];
     }
@@ -642,11 +670,13 @@ const collectUnknownGoicUris = (dossiers: DossierItem[]) => {
   dossiers.forEach((dossier) => {
     dossier.goics.forEach((goic) => {
       const sourceUri = goic.follow_info?.source_goic_uri;
+
       if (typeof sourceUri === 'string' && sourceUri.includes('/data/goic/') && !known.has(sourceUri)) {
         unknown.add(sourceUri);
       }
 
       const followState = goic.follow_info?.source_state;
+
       if (followState?.tb_data && typeof followState.tb_data === 'object' && !Array.isArray(followState.tb_data)) {
         Object.values(followState.tb_data).forEach((value) => {
           if (typeof value === 'string' && value.includes('/data/goic/') && !known.has(value)) {
@@ -712,6 +742,7 @@ const ensureClassLabels = async () => {
   });
 
   const missing = Array.from(classUris).filter((uri) => !labelMap.value[uri]);
+
   if (!missing.length) {
     return;
   }
@@ -784,14 +815,17 @@ const loadLabels = async () => {
     detailResponses.forEach((response) => {
       const uri = response.data?.sjabloon_uri as string | undefined;
       const velden = response.data?.velden as Array<{ property?: string; volgorde?: number }> | undefined;
+
       if (!uri || !Array.isArray(velden)) {
         return;
       }
+
       const fieldOrder: Record<string, number> = {};
       velden.forEach((veld, index) => {
         if (!veld?.property) {
           return;
         }
+
         fieldOrder[veld.property] = typeof veld.volgorde === 'number' ? veld.volgorde : index + 1;
       });
       orderMapByTbClass[uri] = fieldOrder;
@@ -828,6 +862,7 @@ const loadLabels = async () => {
 
   try {
     const unknownGoicUris = collectUnknownGoicUris(props.dossiers);
+
     if (unknownGoicUris.length > 0) {
       const response = await axios.post(apiUrl('/api/goic/displays'), { uris: unknownGoicUris });
       remoteGoicDisplayMap.value = {

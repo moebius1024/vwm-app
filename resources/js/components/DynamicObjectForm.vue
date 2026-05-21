@@ -19,17 +19,17 @@
       <div class="mt-3 flex flex-wrap gap-2">
         <button
           v-for="sjabloon in registratieSjablonen"
-          :key="sjabloon.sjabloon_uri"
+          :key="sjabloon.buttonKey"
           type="button"
           class="rounded-full border px-4 py-2 text-xs font-semibold transition"
           :disabled="!!activeMutationTarget"
-          :class="selectedSjabloonUri === sjabloon.sjabloon_uri
+          :class="isSjabloonSelected(sjabloon)
             ? 'border-amber-600 bg-amber-600 text-white shadow-sm'
             : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100 dark:hover:bg-amber-900/40'
           "
-          @click="setPrimaryObjectByUri(sjabloon.sjabloon_uri)"
+          @click="selectRegistratieSjabloon(sjabloon)"
         >
-          {{ sjabloon.label || shortId(sjabloon.sjabloon_uri) }}
+          {{ sjabloon.buttonLabel || sjabloon.label || shortId(sjabloon.sjabloon_uri) }}
         </button>
       </div>
     </div>
@@ -43,17 +43,17 @@
       <div class="flex flex-wrap gap-2">
         <button
           v-for="sjabloon in toevoegSjablonen"
-          :key="sjabloon.sjabloon_uri"
+          :key="sjabloon.buttonKey"
           type="button"
           class="rounded-full border px-4 py-2 text-xs font-semibold transition"
           :disabled="!!activeMutationTarget"
-          :class="selectedSjabloonUri === sjabloon.sjabloon_uri
+          :class="isSjabloonSelected(sjabloon)
             ? 'border-amber-600 bg-amber-600 text-white shadow-sm'
             : 'border-amber-200 bg-white text-amber-800 hover:bg-amber-100 disabled:cursor-not-allowed disabled:opacity-40 dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100 dark:hover:bg-amber-900/40'
           "
-          @click="setPrimaryObjectByUri(sjabloon.sjabloon_uri)"
+          @click="selectToevoegSjabloon(sjabloon)"
         >
-          {{ sjabloon.label || shortId(sjabloon.sjabloon_uri) }}
+          {{ sjabloon.buttonLabel || sjabloon.label || shortId(sjabloon.sjabloon_uri) }}
         </button>
       </div>
     </div>
@@ -82,31 +82,31 @@
           </div>
 
           <div
-            v-if="isToestandsWeergaveObject(object)"
+            v-if="needsExistingGoicSelection(object)"
             class="mb-4 rounded-lg border border-amber-200/70 bg-amber-50 px-3 py-3 dark:border-amber-300/30 dark:bg-amber-900/20"
           >
             <label class="mb-1 block text-sm font-medium text-amber-900 dark:text-amber-100">
               Bestaand {{ shortId(object.targetClass || 'object') }}
             </label>
 
-            <template v-if="getGoicsForObject(object).length === 1">
+            <template v-if="getExistingGoicOptionsForObject(object).length === 1">
               <input
                 type="text"
                 class="h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-amber-900 shadow-sm outline-none dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100"
-                :value="getGoicDisplayName(getGoicsForObject(object)[0])"
+                :value="getGoicDisplayName(getExistingGoicOptionsForObject(object)[0])"
                 disabled
               >
               <p class="mt-1 text-xs text-amber-700/80 dark:text-amber-100/80">Automatisch gekoppeld (er is maar 1 optie).</p>
             </template>
 
-            <template v-else-if="getGoicsForObject(object).length > 1">
+            <template v-else-if="getExistingGoicOptionsForObject(object).length > 1">
               <select
                 v-model="object.existingGoicId"
                 class="h-10 w-full rounded-lg border border-amber-200 bg-white px-3 text-sm text-amber-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-amber-300/30 dark:bg-gray-900 dark:text-amber-100"
                 required
               >
                 <option disabled value="">Kies {{ shortId(object.targetClass || 'object') }}</option>
-                <option v-for="goic in getGoicsForObject(object)" :key="goic.id" :value="String(goic.id)">
+                <option v-for="goic in getExistingGoicOptionsForObject(object)" :key="goic.id" :value="String(goic.id)">
                   {{ getGoicDisplayName(goic) }}
                 </option>
               </select>
@@ -358,6 +358,14 @@ interface SjabloonSummary {
   target_class: string | null;
   volgorde?: number;
   crud_flags?: string | null;
+  button_label_register?: string | null;
+  button_label_attach?: string | null;
+}
+
+interface SelectableSjabloon extends SjabloonSummary {
+  buttonKey: string;
+  buttonLabel?: string | null;
+  selection_mode: 'default' | 'attach-existing';
 }
 
 interface SjabloonResponse {
@@ -427,6 +435,7 @@ interface ObjectBlock {
   dataTypes: Record<string, 'literal' | 'uri'>;
   fileUploads: Record<string, FileUploadState>;
   existingGoicId: string;
+  attachToExisting: boolean;
 }
 
 const props = defineProps<{
@@ -467,9 +476,11 @@ const kentekenLookupTimers = new Map<string, ReturnType<typeof setTimeout>>();
 const kentekenLastLookup = new Map<string, string>();
 const KENTEKEN_LOOKUP_DEBOUNCE_MS = 500;
 const activeMutationTarget = ref<NonNullable<typeof props.mutationTarget> | null>(null);
+const selectedSjabloonSelectionMode = ref<'default' | 'attach-existing'>('default');
+const selectedSjabloonGroupOverride = ref<'register' | 'toevoeg' | null>(null);
 
 const fieldErrorKey = (object: ObjectBlock, property: string) => `${object.id}::${property}`;
-const hasCrud = (flags: string | null | undefined, letter: 'C' | 'R' | 'U' | 'D') =>
+const hasCrud = (flags: string | null | undefined, letter: 'C' | 'R' | 'U' | 'D' | 'A') =>
   String(flags ?? '').toUpperCase().includes(letter);
 
 const isToestandsWeergaveSjabloon = (sjabloon: SjabloonSummary) => {
@@ -479,22 +490,60 @@ const isToestandsWeergaveSjabloon = (sjabloon: SjabloonSummary) => {
   return uri.includes('ToestandsWeergave') || targetClass.includes('ToestandsWeergave');
 };
 
+const hasAttachCrud = (sjabloon: SjabloonSummary) => hasCrud(sjabloon.crud_flags, 'A');
+const isLegacyToevoegSjabloon = (sjabloon: SjabloonSummary) => isToestandsWeergaveSjabloon(sjabloon);
+
 const orderedSjablonen = computed(() =>
   [...sjablonen.value].sort((a, b) => (a.volgorde ?? 1) - (b.volgorde ?? 1))
 );
 
-const registratieSjablonen = computed(() =>
-  orderedSjablonen.value.filter((sjabloon) => !isToestandsWeergaveSjabloon(sjabloon))
+const registratieSjablonen = computed<SelectableSjabloon[]>(() =>
+  orderedSjablonen.value
+    .filter((sjabloon) => hasCrud(sjabloon.crud_flags, 'C') && !isLegacyToevoegSjabloon(sjabloon))
+    .map((sjabloon) => ({
+      ...sjabloon,
+      buttonKey: `${sjabloon.sjabloon_uri}::register`,
+      buttonLabel: sjabloon.button_label_register ?? sjabloon.label,
+      selection_mode: 'default',
+    }))
 );
 
-const toevoegSjablonen = computed(() =>
-  orderedSjablonen.value.filter((sjabloon) => isToestandsWeergaveSjabloon(sjabloon))
-);
+const toevoegSjablonen = computed<SelectableSjabloon[]>(() => {
+  const items: SelectableSjabloon[] = [];
+
+  orderedSjablonen.value.forEach((sjabloon) => {
+    if (hasAttachCrud(sjabloon)) {
+      items.push({
+        ...sjabloon,
+        buttonKey: `${sjabloon.sjabloon_uri}::toevoeg-attach`,
+        buttonLabel: sjabloon.button_label_attach ?? sjabloon.label,
+        selection_mode: 'attach-existing',
+      });
+
+      return;
+    }
+
+    if (isLegacyToevoegSjabloon(sjabloon)) {
+      items.push({
+        ...sjabloon,
+        buttonKey: `${sjabloon.sjabloon_uri}::toevoeg`,
+        buttonLabel: sjabloon.button_label_attach ?? sjabloon.label,
+        selection_mode: 'default',
+      });
+    }
+  });
+
+  return items;
+});
 
 const registerAnchorId = computed(() => `register-anchor-${props.caseId}`);
 const toevoegAnchorId = computed(() => `toevoeg-anchor-${props.caseId}`);
 
 const selectedSjabloonGroup = computed<'register' | 'toevoeg' | null>(() => {
+  if (selectedSjabloonGroupOverride.value) {
+    return selectedSjabloonGroupOverride.value;
+  }
+
   const selectedUri = selectedSjabloonUri.value;
 
   if (!selectedUri) {
@@ -509,6 +558,11 @@ const selectedSjabloonGroup = computed<'register' | 'toevoeg' | null>(() => {
 
   return isToestandsWeergaveSjabloon(selected) ? 'toevoeg' : 'register';
 });
+
+const isSjabloonSelected = (sjabloon: SelectableSjabloon) => {
+  return selectedSjabloonUri.value === sjabloon.sjabloon_uri
+    && selectedSjabloonSelectionMode.value === sjabloon.selection_mode;
+};
 
 const activeObjectAnchorSelector = computed(() => {
   if (selectedSjabloonGroup.value === 'register') {
@@ -698,11 +752,11 @@ const onFieldBlur = (object: ObjectBlock, veld: Veld) => {
 
 const fieldLookupListId = (object: ObjectBlock, veld: Veld) => {
   if (veld.type !== 'text') {
-    return null;
+    return undefined;
   }
 
   if (!veld.lookup?.endpoint) {
-    return null;
+    return undefined;
   }
 
   return `lookup-${object.id}-${veld.property.replace(/[^a-zA-Z0-9_-]/g, '-')}`;
@@ -807,7 +861,7 @@ const loadClassLabels = async () => {
   }
 };
 
-const initObject = (sjabloon: SjabloonResponse): ObjectBlock => {
+const initObject = (sjabloon: SjabloonResponse, selectionMode: 'default' | 'attach-existing' = 'default'): ObjectBlock => {
   const formData: Record<string, string | string[]> = {};
   const dataTypes: Record<string, 'literal' | 'uri'> = {};
   const fileUploads: Record<string, FileUploadState> = {};
@@ -844,11 +898,68 @@ const initObject = (sjabloon: SjabloonResponse): ObjectBlock => {
     dataTypes,
     fileUploads,
     existingGoicId: '',
+    attachToExisting: selectionMode === 'attach-existing',
   };
 };
 
 const isToestandsWeergaveObject = (object: ObjectBlock) => {
   return typeof object.sjabloonUri === 'string' && object.sjabloonUri.includes('ToestandsWeergave');
+};
+
+const isPersoonsBeschrijvingObject = (object: ObjectBlock) => {
+  return typeof object.sjabloonUri === 'string' && object.sjabloonUri.endsWith('PersoonsBeschrijving');
+};
+
+const getToestandClassUri = (tb: ToestandItem) => {
+  if (typeof tb.tb_class === 'string' && tb.tb_class.trim() !== '') {
+    return tb.tb_class;
+  }
+
+  if (typeof tb.sjabloon_uri === 'string' && tb.sjabloon_uri.trim() !== '') {
+    return tb.sjabloon_uri;
+  }
+
+  return null;
+};
+
+const hasActiveTbClassSuffix = (goic: GoicItem, suffix: string) => {
+  return (goic.toestanden ?? []).some((tb) => {
+    const classUri = getToestandClassUri(tb);
+
+    return typeof classUri === 'string' && classUri.endsWith(suffix);
+  });
+};
+
+const hasActiveSignalementOnGoic = (goic: GoicItem) => hasActiveTbClassSuffix(goic, 'Signalement');
+const hasActivePersoonsBeschrijvingOnGoic = (goic: GoicItem) =>
+  (goic.toestanden ?? []).some((tb) => {
+    const classUri = getToestandClassUri(tb);
+
+    return typeof classUri === 'string' && classUri.endsWith('PersoonsBeschrijving');
+  });
+
+const getExistingGoicOptionsForObject = (object: ObjectBlock) => {
+  if (object.attachToExisting) {
+    const options = getGoicsForObject(object);
+
+    if (!isPersoonsBeschrijvingObject(object)) {
+      return options;
+    }
+
+    return options.filter((goic) =>
+      hasActiveSignalementOnGoic(goic) && !hasActivePersoonsBeschrijvingOnGoic(goic)
+    );
+  }
+
+  if (isToestandsWeergaveObject(object)) {
+    return getGoicsForObject(object);
+  }
+
+  return [];
+};
+
+const needsExistingGoicSelection = (object: ObjectBlock) => {
+  return isToestandsWeergaveObject(object) || object.attachToExisting;
 };
 
 const isFileFieldLockedForMutation = (object: ObjectBlock) => {
@@ -867,7 +978,11 @@ const loadSjabloonByUri = async (uri: string): Promise<SjabloonResponse | null> 
   }
 };
 
-const setPrimaryObjectByUri = async (uri: string | null) => {
+const setPrimaryObjectByUri = async (
+  uri: string | null,
+  group: 'register' | 'toevoeg' = 'register',
+  selectionMode: 'default' | 'attach-existing' = 'default',
+) => {
   clearValidationUi();
 
   if (!uri) {
@@ -881,10 +996,20 @@ return;
 }
 
   selectedSjabloonUri.value = uri;
-  objects.value = [initObject(sjabloon)];
+  selectedSjabloonSelectionMode.value = selectionMode;
+  selectedSjabloonGroupOverride.value = group;
+  objects.value = [initObject(sjabloon, selectionMode)];
   syncExistingGoicSelectionForObject(objects.value[0]);
   roleSelections.value = {};
   activeMutationTarget.value = null;
+};
+
+const selectRegistratieSjabloon = async (sjabloon: SelectableSjabloon) => {
+  await setPrimaryObjectByUri(sjabloon.sjabloon_uri, 'register', 'default');
+};
+
+const selectToevoegSjabloon = async (sjabloon: SelectableSjabloon) => {
+  await setPrimaryObjectByUri(sjabloon.sjabloon_uri, 'toevoeg', sjabloon.selection_mode);
 };
 
 const removeObject = (index: number) => {
@@ -995,6 +1120,14 @@ const shortId = (uri: string) => {
   return parts[parts.length - 1] ?? uri;
 };
 
+const isRoleTbClass = (tbClassUri: string | null | undefined) => {
+  if (typeof tbClassUri !== 'string' || tbClassUri.trim() === '') {
+    return false;
+  }
+
+  return tbClassUri.toLowerCase().includes('rol');
+};
+
 const stripRoleTypePrefix = (label: string) =>
   label.replace(/^RolType_/i, '').trim();
 
@@ -1008,21 +1141,31 @@ const roleButtonLabel = (role: AllowedRole) => {
 
 const getLatestTb = (goic: GoicItem) => {
   const reversed = [...(goic.toestanden ?? [])].reverse();
-  const preferred = reversed.find((tb) => !!tb.tb_class && !!identifierMap.value[tb.tb_class]);
+  const nonRole = reversed.find((tb) => {
+    const classUri = getToestandClassUri(tb);
 
-  return preferred ?? reversed.find((tb) => !!tb.tb_class) ?? null;
+    return !!classUri && !isRoleTbClass(classUri);
+  });
+  const preferred = reversed.find((tb) => {
+    const classUri = getToestandClassUri(tb);
+
+    return !!classUri && !isRoleTbClass(classUri) && !!identifierMap.value[classUri];
+  });
+
+  return preferred ?? nonRole ?? reversed.find((tb) => !!getToestandClassUri(tb)) ?? null;
 };
 
 const getGoicClassUri = (goic: GoicItem) => {
   const tb = getLatestTb(goic);
+  const tbClassUri = tb ? getToestandClassUri(tb) : null;
 
-  if (!tb?.tb_class) {
+  if (!tbClassUri) {
 return null;
 }
 
-  const config = identifierMap.value[tb.tb_class];
+  const config = identifierMap.value[tbClassUri];
 
-  return config?.describedClass ?? describedClassByTbClass.value[tb.tb_class] ?? null;
+  return config?.describedClass ?? describedClassByTbClass.value[tbClassUri] ?? null;
 };
 
 const getGoicDisplayName = (goic: GoicItem) => {
@@ -1090,13 +1233,13 @@ return [];
 };
 
 const syncExistingGoicSelectionForObject = (object: ObjectBlock) => {
-  if (!isToestandsWeergaveObject(object)) {
+  if (!needsExistingGoicSelection(object)) {
     object.existingGoicId = '';
 
     return;
   }
 
-  const options = getGoicsForObject(object);
+  const options = getExistingGoicOptionsForObject(object);
 
   if (options.length === 1) {
     object.existingGoicId = String(options[0].id);
@@ -1224,6 +1367,8 @@ return;
 
   clearValidationUi();
   selectedSjabloonUri.value = null;
+  selectedSjabloonSelectionMode.value = 'default';
+  selectedSjabloonGroupOverride.value = null;
 
   if (isRoleSelected(role.tb_class)) {
     return;
@@ -1267,7 +1412,9 @@ const loadForTransactie = async () => {
     allowedRoles.value = sjabloon.allowed_roles ?? [];
 
     if (sjabloon.allowed_sjablonen && sjabloon.allowed_sjablonen.length) {
-      sjablonen.value = sjabloon.allowed_sjablonen.filter((item) => hasCrud(item.crud_flags, 'C'));
+      sjablonen.value = sjabloon.allowed_sjablonen.filter((item) =>
+        hasCrud(item.crud_flags, 'C') || hasCrud(item.crud_flags, 'A')
+      );
     } else {
       sjablonen.value = [
         {
@@ -1283,7 +1430,7 @@ const loadForTransactie = async () => {
     const primary = registratieSjablonen.value[0] ?? orderedSjablonen.value[0];
 
     if (primary) {
-      await setPrimaryObjectByUri(primary.sjabloon_uri);
+      await setPrimaryObjectByUri(primary.sjabloon_uri, 'register', 'default');
     } else {
       objects.value = [initObject(sjabloon)];
     }
@@ -1342,21 +1489,21 @@ const submitForm = async () => {
 
   try {
     const missingExistingGoicSelection = objects.value.some((object) => {
-      if (!isToestandsWeergaveObject(object)) {
+      if (!needsExistingGoicSelection(object)) {
         return false;
       }
 
-      const options = getGoicsForObject(object);
+      const options = getExistingGoicOptionsForObject(object);
 
-      if (options.length <= 1) {
-        return false;
+      if (options.length === 0) {
+        return true;
       }
 
-      return !object.existingGoicId;
+      return options.length > 1 && !object.existingGoicId;
     });
 
     if (missingExistingGoicSelection) {
-      alert('Kies voor elke toestandsweergave het bestaande object waar je op wilt registreren.');
+      alert('Kies voor elke toevoegen-actie het bestaande object waar je op wilt registreren.');
 
       return;
     }
@@ -1404,6 +1551,7 @@ return;
         client_id: object.clientId,
         sjabloon_uri: object.sjabloonUri,
         target_class: object.targetClass,
+        attach_to_existing: object.attachToExisting,
         existing_goic_id: object.existingGoicId ? Number(object.existingGoicId) : null,
         data: object.formData,
         data_types: object.dataTypes,
@@ -1444,7 +1592,13 @@ const applyMutationTarget = async (target: NonNullable<typeof props.mutationTarg
   clearValidationUi();
   roleSelections.value = {};
   selectedSjabloonUri.value = target.sjabloon_uri;
-  const block = initObject(sjabloon);
+  selectedSjabloonSelectionMode.value = 'default';
+  selectedSjabloonGroupOverride.value = isToestandsWeergaveSjabloon({
+    sjabloon_uri: target.sjabloon_uri,
+    label: null,
+    target_class: sjabloon.target_class,
+  }) ? 'toevoeg' : 'register';
+  const block = initObject(sjabloon, 'default');
   block.existingGoicId = String(target.goic_id);
 
   if (target.tb_data && typeof target.tb_data === 'object' && !Array.isArray(target.tb_data)) {

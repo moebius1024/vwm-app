@@ -380,6 +380,64 @@ class SjabloonMetadataService
         ];
     }
 
+    public function fetchSjabloonButtonLabelsByTbClasses(array $tbClasses): array
+    {
+        $this->assertShapesPresent();
+        $uris = array_values(array_unique(array_filter(
+            $tbClasses,
+            fn ($uri) => is_string($uri) && $uri !== ''
+        )));
+
+        if (empty($uris)) {
+            return [];
+        }
+
+        $shapeGraphs = $this->shapeGraphValuesClause();
+        $values = implode(' ', array_map(fn ($uri) => "<{$uri}>", $uris));
+        $query = "
+            PREFIX sh: <http://www.w3.org/ns/shacl#>
+            PREFIX ui: <http://ontologie.politie.nl/def/ui#>
+            SELECT ?tbClass ?buttonLabelRegister ?buttonLabelAttach
+            WHERE {
+                VALUES ?tbClass { {$values} }
+                VALUES ?shapeGraph { {$shapeGraphs} }
+                GRAPH ?shapeGraph {
+                    ?shape sh:targetClass ?tbClass .
+                    OPTIONAL { ?shape ui:buttonLabelRegister ?buttonLabelRegister . }
+                    OPTIONAL { ?shape ui:buttonLabelAttach ?buttonLabelAttach . }
+                }
+            }
+        ";
+
+        $rows = $this->graphService->query($query);
+        $map = [];
+        foreach ($rows as $row) {
+            $tbClass = $row['tbClass'] ?? null;
+            if (! is_string($tbClass) || $tbClass === '') {
+                continue;
+            }
+
+            if (! isset($map[$tbClass])) {
+                $map[$tbClass] = [
+                    'button_label_register' => null,
+                    'button_label_attach' => null,
+                ];
+            }
+
+            $registerLabel = $row['buttonLabelRegister'] ?? null;
+            $attachLabel = $row['buttonLabelAttach'] ?? null;
+
+            if (is_string($registerLabel) && trim($registerLabel) !== '') {
+                $map[$tbClass]['button_label_register'] = trim($registerLabel);
+            }
+            if (is_string($attachLabel) && trim($attachLabel) !== '') {
+                $map[$tbClass]['button_label_attach'] = trim($attachLabel);
+            }
+        }
+
+        return $map;
+    }
+
     public function fetchRelatieRegels(): array
     {
         $query = '

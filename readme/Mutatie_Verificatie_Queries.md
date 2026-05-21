@@ -104,3 +104,31 @@ ORDER BY DESC(?registeredAt)
 LIMIT 200
 ```
 
+## 6) GraphDB: doelclass op GOIC controleren
+
+```sparql
+PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+
+SELECT ?goic ?class WHERE {
+  GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+    VALUES ?goic { <GOIC_URI> }
+    OPTIONAL { ?goic vwm:heeftDoelClass ?class . }
+  }
+}
+```
+
+Verwachting bij nieuwe GOIC mutatie:
+- `?class` is gevuld met de target class van de mutatie (bijv. `dpm:Person`, `dpm:Incident`, `dpm:Vehicle`).
+
+## 7) GraphDB: ontbrekende doelclass volume-check
+
+```sparql
+PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+
+SELECT (COUNT(DISTINCT ?goic) AS ?zonderDoelClass) WHERE {
+  GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+    ?goic a vwm:GegevensObjectInContext .
+    FILTER NOT EXISTS { ?goic vwm:heeftDoelClass ?class . }
+  }
+}
+```

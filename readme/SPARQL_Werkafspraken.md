@@ -103,6 +103,28 @@ SELECT ?assoc ?owned ?target WHERE {
 }
 ```
 
+### 9.4 GOIC doelclass controleren
+```sparql
+PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+SELECT ?goic ?class WHERE {
+  GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+    VALUES ?goic { <GOIC_URI> }
+    OPTIONAL { ?goic vwm:heeftDoelClass ?class . }
+  }
+}
+```
+
+### 9.5 GOIC zonder doelclass (volume-check)
+```sparql
+PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+SELECT (COUNT(DISTINCT ?goic) AS ?zonderDoelClass) WHERE {
+  GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+    ?goic a vwm:GegevensObjectInContext .
+    FILTER NOT EXISTS { ?goic vwm:heeftDoelClass ?class . }
+  }
+}
+```
+
 ## 10. Werkafspraak bij productie-achtige data
 
 1. Elke destructieve query eerst laten reviewen (4-ogen-principe).

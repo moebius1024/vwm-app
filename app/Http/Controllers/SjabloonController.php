@@ -37,6 +37,9 @@ class SjabloonController extends Controller
             ->orderBy('volgorde')
             ->get(['sjabloon_uri', 'volgorde', 'crud_flags'])
             ->all();
+        $buttonLabelsByTbClass = $this->metadataService->fetchSjabloonButtonLabelsByTbClasses(
+            array_map(fn ($row) => $row->sjabloon_uri, $linkedSjablonen)
+        );
 
         $allowed = [];
         $primarySjabloon = null;
@@ -50,6 +53,8 @@ class SjabloonController extends Controller
                 'target_class' => $info['target_class'],
                 'volgorde' => $row->volgorde ?? 1,
                 'crud_flags' => $row->crud_flags ?? 'CRUD',
+                'button_label_register' => $buttonLabelsByTbClass[$uri]['button_label_register'] ?? null,
+                'button_label_attach' => $buttonLabelsByTbClass[$uri]['button_label_attach'] ?? null,
             ];
 
             if ($primarySjabloon === null) {

@@ -103,6 +103,7 @@ class MutatieController extends Controller
                 'objects.*.client_id' => 'required|string',
                 'objects.*.sjabloon_uri' => 'required|string',
                 'objects.*.target_class' => 'required|string',
+                'objects.*.attach_to_existing' => 'sometimes|boolean',
                 'objects.*.existing_goic_id' => 'sometimes|nullable|integer',
                 'objects.*.data' => 'required|array',
                 'objects.*.data_types' => 'sometimes|array',
@@ -182,10 +183,29 @@ class MutatieController extends Controller
 
             $object['target_class'] = $expectedTargetClass;
 
-            if ($mode !== 'mutate' && ! $this->hasCrud($allowedSjabloonCrud[$tbClass] ?? null, 'C')) {
-                return response()->json([
-                    'error' => "Aanmaken niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
-                ], 422);
+            $crudFlags = $allowedSjabloonCrud[$tbClass] ?? null;
+            $isToestandsWeergave = $this->isToestandsWeergaveTbClass((string) $tbClass);
+            $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
+            $attachRequested = ! empty($object['attach_to_existing']);
+            $isAttachOnlySjabloon = $this->hasCrud($crudFlags, 'A') && ! $this->hasCrud($crudFlags, 'C');
+            $isAttachIntent = $attachRequested || ($existingGoicId !== null && $existingGoicId > 0) || $isToestandsWeergave || $isAttachOnlySjabloon;
+
+            $object['attach_to_existing'] = $isAttachIntent;
+
+            if ($mode !== 'mutate') {
+                $attachAllowed = $this->hasCrud($crudFlags, 'A') || ($isToestandsWeergave && $this->hasCrud($crudFlags, 'C'));
+
+                if ($isAttachIntent && ! $attachAllowed) {
+                    return response()->json([
+                        'error' => "Toevoegen op bestaand object niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
+                    ], 422);
+                }
+
+                if (! $isAttachIntent && ! $this->hasCrud($crudFlags, 'C')) {
+                    return response()->json([
+                        'error' => "Aanmaken niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
+                    ], 422);
+                }
             }
         }
         unset($object);
@@ -203,6 +223,13 @@ class MutatieController extends Controller
         }
 
         $goicTargetClassMap = $this->getGoicTargetClassMapForCase($base['case_id']);
+        $goicUriById = [];
+        if (! empty($goicTargetClassMap)) {
+            $goicUriById = DB::table('gegevens_objecten_in_context')
+                ->whereIn('id', array_keys($goicTargetClassMap))
+                ->pluck('rdf_uri', 'id')
+                ->all();
+        }
         $goicIdsByClass = [];
         foreach ($goicTargetClassMap as $goicId => $classUri) {
             if (! isset($goicIdsByClass[$classUri])) {
@@ -215,6 +242,7 @@ class MutatieController extends Controller
             $tbClass = (string) ($object['sjabloon_uri'] ?? '');
             $targetClass = (string) ($object['target_class'] ?? '');
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
+            $attachToExisting = ! empty($object['attach_to_existing']);
             $isToestandsWeergave = $this->isToestandsWeergaveTbClass($tbClass);
             $candidateGoicIds = $goicIdsByClass[$targetClass] ?? [];
 
@@ -233,12 +261,6 @@ class MutatieController extends Controller
             }
 
             if ($existingGoicId !== null && $existingGoicId > 0) {
-                if (! $isToestandsWeergave) {
-                    return response()->json([
-                        'error' => "Bestaand object koppelen mag alleen voor ToestandsWeergave-sjablonen ({$tbClass}).",
-                    ], 422);
-                }
-
                 $existingClass = $goicTargetClassMap[$existingGoicId] ?? null;
                 if (! is_string($existingClass)) {
                     return response()->json([
@@ -252,8 +274,58 @@ class MutatieController extends Controller
                     ], 422);
                 }
 
+                if (! $isToestandsWeergave && ! $attachToExisting) {
+                    return response()->json([
+                        'error' => "Bestaand object koppelen is niet toegestaan voor sjabloon {$tbClass}.",
+                    ], 422);
+                }
+
+                if ($this->isPersoonsBeschrijvingTbClass($tbClass)) {
+                    $existingGoicUri = $goicUriById[$existingGoicId] ?? null;
+                    if (! is_string($existingGoicUri) || $existingGoicUri === '') {
+                        return response()->json([
+                            'error' => 'Kon bestaand GOIC niet resolven.',
+                        ], 422);
+                    }
+
+                    $attachCheck = $this->evaluateBeschrijvingAttachEligibility((string) $existingGoicUri, $targetClass);
+                    if (! $attachCheck['has_signalement']) {
+                        return response()->json([
+                            'error' => 'PersoonsBeschrijving toevoegen kan alleen op een object met actief signalement.',
+                        ], 422);
+                    }
+                    if ($attachCheck['has_beschrijving']) {
+                        return response()->json([
+                            'error' => 'Dit object heeft al een actieve beschrijving.',
+                        ], 422);
+                    }
+                }
+
                 $object['existing_goic_id'] = $existingGoicId;
                 continue;
+            }
+
+            if ($attachToExisting) {
+                if ($this->isPersoonsBeschrijvingTbClass($tbClass)) {
+                    return response()->json([
+                        'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze beschrijving wilt registreren.",
+                    ], 422);
+                }
+
+                if (count($candidateGoicIds) === 1) {
+                    $object['existing_goic_id'] = $candidateGoicIds[0];
+                    continue;
+                }
+
+                if (count($candidateGoicIds) > 1) {
+                    return response()->json([
+                        'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze registratie wilt uitvoeren.",
+                    ], 422);
+                }
+
+                return response()->json([
+                    'error' => "Geen bestaand object ({$targetClass}) gevonden in dit dossier voor deze registratie.",
+                ], 422);
             }
 
             if ($isToestandsWeergave) {
@@ -419,6 +491,7 @@ class MutatieController extends Controller
                         $allTriples .= "<{$goUri}> a <{$vwm}GegevensObject> . \n";
                         $allTriples .= "<{$goicUri}> a <{$vwm}GegevensObjectInContext> . \n";
                         $allTriples .= "<{$goicUri}> <{$vwm}beschrijftGO> <{$goUri}> . \n";
+                        $allTriples .= "<{$goicUri}> <{$vwm}heeftDoelClass> <{$describedClass}> . \n";
                         $allTriples .= "<{$goicUri}> <{$vwm}hoortBijDossier> <{$dossier->rdf_uri}> . \n";
                     }
                     $allTriples .= "<{$tbUri}> a <{$tbClass}> . \n";
@@ -1521,6 +1594,63 @@ class MutatieController extends Controller
     private function isToestandsWeergaveTbClass(string $tbClassUri): bool
     {
         return str_contains($tbClassUri, 'ToestandsWeergave');
+    }
+
+    private function isPersoonsBeschrijvingTbClass(string $tbClassUri): bool
+    {
+        return Str::endsWith($tbClassUri, 'PersoonsBeschrijving');
+    }
+
+    private function isSignalementTbClass(string $tbClassUri): bool
+    {
+        return Str::endsWith($tbClassUri, 'Signalement');
+    }
+
+    private function isBeschrijvingTbClass(string $tbClassUri): bool
+    {
+        return Str::endsWith($tbClassUri, 'Beschrijving');
+    }
+
+    /**
+     * @return array{has_signalement:bool,has_beschrijving:bool}
+     */
+    private function evaluateBeschrijvingAttachEligibility(string $goicUri, string $targetClass): array
+    {
+        $activeRows = $this->fetchActiveTbRowsForGoic($goicUri);
+        $tbClasses = [];
+        foreach ($activeRows as $row) {
+            $tbClass = (string) ($row['tb_class'] ?? '');
+            if ($tbClass !== '') {
+                $tbClasses[$tbClass] = true;
+            }
+        }
+        $classUris = array_keys($tbClasses);
+        if (empty($classUris)) {
+            return ['has_signalement' => false, 'has_beschrijving' => false];
+        }
+
+        $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses($classUris);
+        $hasSignalement = false;
+        $hasBeschrijving = false;
+
+        foreach ($classUris as $tbClass) {
+            $describedClass = $describedByTb[$tbClass] ?? null;
+            if (! is_string($describedClass) || $describedClass !== $targetClass) {
+                continue;
+            }
+
+            if ($this->isSignalementTbClass($tbClass)) {
+                $hasSignalement = true;
+            }
+            if ($this->isBeschrijvingTbClass($tbClass)) {
+                $hasBeschrijving = true;
+            }
+        }
+
+        return [
+            'has_signalement' => $hasSignalement,
+            'has_beschrijving' => $hasBeschrijving,
+        ];
     }
 
     private function getGoicTargetClassMapForCase(int $caseId): array

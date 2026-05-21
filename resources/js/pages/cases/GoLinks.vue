@@ -84,6 +84,7 @@ const editBackHref = computed(() => (
 ));
 const caseConsultHref = (caseId: number) => {
   const params = new URLSearchParams({ case: String(caseId), go: props.goUri });
+
   if (props.selectedCaseId) {
     params.set('follow_target_case', String(props.selectedCaseId));
   }
@@ -118,6 +119,7 @@ const fieldLabelFor = (key: string) => {
 
 const isAssociationLikeField = (key: string) => {
   const normalized = key.trim().toLowerCase();
+
   return normalized === 'producedattime'
     || normalized === 'targetobject'
     || normalized === 'ownedobject'
@@ -158,6 +160,7 @@ const firstUriFromValue = (value: unknown): string | null => {
 
 const bestandViewUrl = (value: unknown) => {
   const uri = firstUriFromValue(value);
+
   if (!uri) {
     return null;
   }
@@ -255,7 +258,22 @@ const buildGoicDisplayMap = (items: GoicItem[]) => {
       }
     }
 
-    map[goic.rdf_uri] = identifierValue ? `${classLabel}: ${identifierValue}` : classLabel;
+    const pickReadableIdentifier = (value: string) => {
+      const parts = value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+
+      if (parts.length === 0) {
+        return '';
+      }
+
+      const nonNumeric = parts.find((item) => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(item));
+
+      return nonNumeric ?? parts[0];
+    };
+
+    const readableIdentifier = pickReadableIdentifier(identifierValue);
+    map[goic.rdf_uri] = readableIdentifier
+      ? `${classLabel} #${goic.id}, ${readableIdentifier}`
+      : `${classLabel} #${goic.id}`;
   });
   goicDisplayMap.value = map;
 };
@@ -286,6 +304,7 @@ const goicClassLabel = (goic: GoicItem) => {
 
 const followedRegistrationTitle = (goic: GoicItem) => {
   const classLabel = goicClassLabel(goic);
+
   return classLabel ? `Gevolgde ${classLabel} Registratie` : 'Gevolgde Registratie';
 };
 
@@ -404,6 +423,7 @@ const shouldSkipFieldForGoic = (key: string, value: unknown, goic: GoicItem) => 
   }
 
   const keyLabel = fieldLabelFor(key).toLowerCase();
+
   if (keyLabel === 'beschrijving' && typeof value === 'string' && value.toLowerCase().startsWith('verwijst naar goic ')) {
     return true;
   }
@@ -421,6 +441,7 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
 
 const isAssociationToestand = (tb: ToestandItem) => {
   const value = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+
   return value.includes('dataobjectassociation');
 };
 
@@ -430,6 +451,7 @@ const visibleToestanden = (goic: GoicItem) => {
 
 const visibleFollowSourceEntries = (goic: GoicItem): [string, unknown][] => {
   const state = goic.follow_info?.source_state;
+
   if (!state || isAssociationToestand(state)) {
     return [];
   }
@@ -502,6 +524,7 @@ const ensureClassLabels = async () => {
   });
 
   const missing = Array.from(classUris).filter((uri) => !labelMap.value[uri]);
+
   if (!missing.length) {
     return;
   }

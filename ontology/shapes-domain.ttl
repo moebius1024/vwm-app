@@ -234,3 +234,52 @@ vwm:VerkeersincidentDossierMaxOneIncidentShape a sh:NodeShape ;
       }
     """ ;
   ] .
+
+vwm:GoicDoelClassConsistencyShape a sh:NodeShape ;
+  sh:targetClass vwm:GegevensObjectInContext ;
+  sh:property [
+    sh:path vwm:heeftDoelClass ;
+    sh:nodeKind sh:IRI ;
+    sh:maxCount 1 ;
+  ] ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "GOIC met actieve kern-TB moet vwm:heeftDoelClass hebben." ;
+    sh:select """
+      PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+      PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+      SELECT $this
+      WHERE {
+        FILTER EXISTS {
+          ?tb vwm:beschrijftGOIC $this ;
+              a ?tbClass .
+          ?tbClass vwm:beschrijftClass ?expectedClass .
+          FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+          FILTER(STRENDS(STR(?tbClass), "Beschrijving") || STRENDS(STR(?tbClass), "Signalement"))
+          FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:RolBeschrijving . }
+          FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:ToestandsWeergave . }
+        }
+        FILTER NOT EXISTS { $this vwm:heeftDoelClass ?doelClass . }
+      }
+    """ ;
+  ] ;
+  sh:sparql [
+    a sh:SPARQLConstraint ;
+    sh:message "vwm:heeftDoelClass op GOIC moet overeenkomen met actieve kern-TB class." ;
+    sh:select """
+      PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+      PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+      SELECT DISTINCT $this
+      WHERE {
+        ?tb vwm:beschrijftGOIC $this ;
+            a ?tbClass .
+        ?tbClass vwm:beschrijftClass ?expectedClass .
+        $this vwm:heeftDoelClass ?actualClass .
+        FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+        FILTER(STRENDS(STR(?tbClass), "Beschrijving") || STRENDS(STR(?tbClass), "Signalement"))
+        FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:RolBeschrijving . }
+        FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:ToestandsWeergave . }
+        FILTER (?actualClass != ?expectedClass)
+      }
+    """ ;
+  ] .

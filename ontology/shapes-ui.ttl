@@ -6,6 +6,11 @@
 # UI-only metadata extract (screen hints) as separate graph.
 # Keep this file focused on application rendering metadata.
 
+vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonsBeschrijving ;
+  ui:buttonLabelRegister "Persoon" ;
+  ui:buttonLabelAttach "PersoonBeschrijving" .
+
 vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:VoertuigBeschrijving ;
   sh:property [

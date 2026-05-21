@@ -132,6 +132,7 @@ const isLicensePlateProperty = (property: string) => {
 
 const isAssociationLikeField = (key: string) => {
   const normalized = key.trim().toLowerCase();
+
   return normalized === 'producedattime'
     || normalized === 'targetobject'
     || normalized === 'ownedobject'
@@ -162,6 +163,7 @@ const isIncidentReferenceField = (key: string) => {
 
 const isRoleReferenceField = (key: string) => {
   const normalized = key.trim().toLowerCase();
+
   return normalized === 'van'
     || normalized === 'naar'
     || normalized === 'heeftincident'
@@ -197,6 +199,7 @@ const firstUriFromValue = (value: unknown): string | null => {
 
 const bestandViewUrl = (value: unknown) => {
   const uri = firstUriFromValue(value);
+
   if (!uri) {
     return null;
   }
@@ -300,6 +303,7 @@ return;
           const uniqueValues: string[] = [];
           values.forEach((value) => {
             const normalized = value.trim().toUpperCase();
+
             if (!uniqueValues.some((item) => item.trim().toUpperCase() === normalized)) {
               uniqueValues.push(value);
             }
@@ -309,11 +313,27 @@ return;
         }
       }
 
-      const display = identifierValue ? `${classLabel}: ${identifierValue}` : classLabel;
+      const pickReadableIdentifier = (value: string) => {
+        const parts = value.split(',').map((item) => item.trim()).filter((item) => item !== '');
+
+        if (parts.length === 0) {
+          return '';
+        }
+
+        const nonNumeric = parts.find((item) => /[A-Za-zÀ-ÖØ-öø-ÿ]/.test(item));
+
+        return nonNumeric ?? parts[0];
+      };
+
+      const readableIdentifier = pickReadableIdentifier(identifierValue);
+      const display = readableIdentifier
+        ? `${classLabel} #${goic.id}, ${readableIdentifier}`
+        : `${classLabel} #${goic.id}`;
       const vehicleOnlyIdentifier = describedClass === 'http://ontologie.politie.nl/def/dpm#Vehicle' && identifierValue;
       const finalDisplay = vehicleOnlyIdentifier ? identifierValue : display;
       map[goic.rdf_uri] = finalDisplay;
       tailMap[shortId(goic.rdf_uri)] = finalDisplay;
+
       if (goic.go_uri && !goMap[goic.go_uri]) {
         goMap[goic.go_uri] = finalDisplay;
       }
@@ -351,6 +371,7 @@ const goicClassLabel = (goic: GoicItem) => {
 
 const followedRegistrationTitle = (goic: GoicItem) => {
   const classLabel = goicClassLabel(goic);
+
   return classLabel ? `Gevolgde ${classLabel} Registratie` : 'Gevolgde Registratie';
 };
 
@@ -418,6 +439,7 @@ return label;
 
   if (typeof value === 'string') {
     const trimmed = value.trim();
+
     if (trimmed !== '' && goicDisplayByTail.value[trimmed]) {
       return goicDisplayByTail.value[trimmed];
     }
@@ -432,12 +454,15 @@ return JSON.stringify(value, null, 2);
 
 const formatFieldValue = (key: string, value: unknown) => {
   let formatted = formatValue(value);
+
   if (isLicensePlateProperty(key)) {
     formatted = formatted.toUpperCase();
   }
+
   if ((isIncidentReferenceField(key) || isRoleReferenceField(key)) && /^[^:]+:\s+/.test(formatted)) {
     formatted = formatted.replace(/^[^:]+:\s+/, '');
   }
+
   return formatted;
 };
 
@@ -528,6 +553,7 @@ return;
       map[item.target_class] = item.volgorde ?? index + 1;
       crudByClass[item.target_class] = String((item as { crud_flags?: string | null }).crud_flags ?? 'CRUD').toUpperCase();
       const uri = (item as { sjabloon_uri?: string | null }).sjabloon_uri ?? null;
+
       if (uri) {
         crudBySjabloon[uri] = String((item as { crud_flags?: string | null }).crud_flags ?? 'CRUD').toUpperCase();
       }
@@ -538,6 +564,7 @@ return;
       }
 
       crudByRole[item.tb_class] = String(item.crud_flags ?? 'CRD').toUpperCase();
+
       if (item.role_type) {
         crudByRoleType[item.role_type] = String(item.crud_flags ?? 'CRD').toUpperCase();
       }
@@ -619,6 +646,7 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
     if (orderMap) {
       const aOrder = orderMap[aKey] ?? Number.MAX_SAFE_INTEGER;
       const bOrder = orderMap[bKey] ?? Number.MAX_SAFE_INTEGER;
+
       if (aOrder !== bOrder) {
         return aOrder - bOrder;
       }
@@ -630,6 +658,7 @@ const tbEntries = (tb: ToestandItem): [string, unknown][] => {
 
 const isAssociationToestand = (tb: ToestandItem) => {
   const value = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+
   return value.includes('dataobjectassociation');
 };
 
@@ -649,16 +678,20 @@ const visibleToestanden = (goic: GoicItem) => {
 
     if (isRoleToestand(tb)) {
       const roleTypeUri = getRoleTypeUri(tb);
+
       if (roleTypeUri) {
         return hasCrud(roleCrudByTypeMap.value[roleTypeUri] ?? 'CRD', 'R');
       }
+
       const roleKey = tb.sjabloon_uri ?? tb.tb_class ?? '';
       const flags = roleCrudMap.value[roleKey];
+
       return hasCrud(flags ?? 'CRD', 'R');
     }
 
     const key = tb.tb_class ?? tb.sjabloon_uri ?? '';
     const flags = key ? sjabloonCrudMap.value[key] : null;
+
     return hasCrud(flags ?? 'CRUD', 'R');
   });
 
@@ -666,9 +699,11 @@ const visibleToestanden = (goic: GoicItem) => {
     if (isRoleToestand(tb)) {
       return 2;
     }
+
     if (isToestandsWeergaveToestand(tb)) {
       return 1;
     }
+
     return 0;
   };
 
@@ -676,9 +711,11 @@ const visibleToestanden = (goic: GoicItem) => {
     .map((tb, index) => ({ tb, index }))
     .sort((a, b) => {
       const diff = rank(a.tb) - rank(b.tb);
+
       if (diff !== 0) {
         return diff;
       }
+
       return a.index - b.index;
     })
     .map((item) => item.tb);
@@ -686,11 +723,13 @@ const visibleToestanden = (goic: GoicItem) => {
 
 const isRoleToestand = (tb: ToestandItem) => {
   const marker = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+
   if (marker.includes('roltype') || marker.includes('rol')) {
     return true;
   }
 
   const entries = tbEntries(tb).map(([key]) => String(key).toLowerCase());
+
   return entries.includes('roltype') || entries.some((key) => key.endsWith('#roltype') || key.endsWith('/roltype'));
 };
 
@@ -701,6 +740,7 @@ const getRoleTypeUri = (tb: ToestandItem): string | null => {
 
   const data = tb.tb_data as Record<string, unknown>;
   const direct = data.rolType;
+
   if (typeof direct === 'string' && direct !== '') {
     return direct;
   }
@@ -709,6 +749,7 @@ const getRoleTypeUri = (tb: ToestandItem): string | null => {
     if (!key.toLowerCase().endsWith('roltype')) {
       continue;
     }
+
     if (typeof value === 'string' && value !== '') {
       return value;
     }
@@ -753,23 +794,29 @@ const canMutate = (tb: ToestandItem) => {
 
   const key = tb.tb_class ?? tb.sjabloon_uri ?? '';
   const flags = key ? sjabloonCrudMap.value[key] : null;
+
   return hasCrud(flags ?? 'CRUD', 'U');
 };
 
 const canDelete = (tb: ToestandItem) => {
   if (isRoleToestand(tb)) {
     const roleTypeUri = getRoleTypeUri(tb);
+
     if (roleTypeUri) {
       const flags = roleCrudByTypeMap.value[roleTypeUri];
+
       return typeof flags === 'string' ? hasCrud(flags, 'D') : false;
     }
+
     const roleKey = tb.sjabloon_uri ?? tb.tb_class ?? '';
     const flags = roleCrudMap.value[roleKey];
+
     return typeof flags === 'string' ? hasCrud(flags, 'D') : false;
   }
 
   const key = tb.tb_class ?? tb.sjabloon_uri ?? '';
   const flags = key ? sjabloonCrudMap.value[key] : null;
+
   return hasCrud(flags ?? 'CRUD', 'D');
 };
 
@@ -777,6 +824,7 @@ const deleteRoleToestand = async (goic: GoicItem, tb: ToestandItem) => {
   const ok = typeof window !== 'undefined'
     ? window.confirm('Rol verwijderen?\n\nJe staat op het punt deze rol te beëindigen. Dit kan niet ongedaan worden gemaakt.')
     : false;
+
   if (!ok) {
     return;
   }
@@ -797,6 +845,7 @@ const deleteRoleToestand = async (goic: GoicItem, tb: ToestandItem) => {
     emit('mutation-changed');
   } catch (error) {
     console.error('Fout bij verwijderen rol:', error);
+
     if (typeof window !== 'undefined') {
       window.alert('Verwijderen mislukt. Zie console voor details.');
     }
@@ -805,6 +854,7 @@ const deleteRoleToestand = async (goic: GoicItem, tb: ToestandItem) => {
 
 const isToestandsWeergaveToestand = (tb: ToestandItem) => {
   const marker = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+
   return marker.includes('toestandsweergave');
 };
 
@@ -812,6 +862,7 @@ const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
   const ok = typeof window !== 'undefined'
     ? window.confirm('Toestand verwijderen?\n\nJe staat op het punt deze toestandsbeschrijving te beëindigen. Dit kan niet ongedaan worden gemaakt.')
     : false;
+
   if (!ok) {
     return;
   }
@@ -832,6 +883,7 @@ const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
     emit('mutation-changed');
   } catch (error) {
     console.error('Fout bij verwijderen toestand:', error);
+
     if (typeof window !== 'undefined') {
       window.alert('Verwijderen mislukt. Zie console voor details.');
     }
@@ -840,6 +892,7 @@ const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
 
 const visibleFollowSourceEntries = (goic: GoicItem): [string, unknown][] => {
   const state = goic.follow_info?.source_state;
+
   if (!state || isAssociationToestand(state)) {
     return [];
   }
@@ -900,11 +953,13 @@ const collectUnknownGoicUris = (dossiers: DossierItem[]) => {
   dossiers.forEach((dossier) => {
     dossier.goics.forEach((goic) => {
       const sourceUri = goic.follow_info?.source_goic_uri;
+
       if (typeof sourceUri === 'string' && sourceUri.includes('/data/goic/') && !known.has(sourceUri)) {
         unknown.add(sourceUri);
       }
 
       const followState = goic.follow_info?.source_state;
+
       if (followState?.tb_data && typeof followState.tb_data === 'object' && !Array.isArray(followState.tb_data)) {
         Object.values(followState.tb_data).forEach((value) => {
           if (typeof value === 'string' && value.includes('/data/goic/') && !known.has(value)) {
@@ -962,6 +1017,7 @@ const ensureClassLabels = async () => {
   });
 
   const missing = Array.from(classUris).filter((uri) => !labelMap.value[uri]);
+
   if (!missing.length) {
     return;
   }
@@ -1034,14 +1090,17 @@ const loadLabels = async () => {
     detailResponses.forEach((response) => {
       const uri = response.data?.sjabloon_uri as string | undefined;
       const velden = response.data?.velden as Array<{ property?: string; volgorde?: number }> | undefined;
+
       if (!uri || !Array.isArray(velden)) {
         return;
       }
+
       const fieldOrder: Record<string, number> = {};
       velden.forEach((veld, index) => {
         if (!veld?.property) {
           return;
         }
+
         fieldOrder[veld.property] = typeof veld.volgorde === 'number' ? veld.volgorde : index + 1;
       });
       orderMapByTbClass[uri] = fieldOrder;
@@ -1078,6 +1137,7 @@ const loadLabels = async () => {
 
   try {
     const unknownGoicUris = collectUnknownGoicUris(props.dossiers);
+
     if (unknownGoicUris.length > 0) {
       const response = await axios.post(apiUrl('/api/goic/displays'), { uris: unknownGoicUris });
       remoteGoicDisplayMap.value = {
