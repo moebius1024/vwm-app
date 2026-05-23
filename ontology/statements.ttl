@@ -134,7 +134,7 @@
 <http://ontologie.politie.nl/def/vwm#IncidentBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Incident>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Incident";
-  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Beschrijving> .
 
 <http://ontologie.politie.nl/def/vwm#ObjectMutatie> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "ObjectMutatie" .
@@ -142,12 +142,12 @@
 <http://ontologie.politie.nl/def/vwm#OndernemingsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Onderneming>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Onderneming";
-  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Beschrijving> .
 
 <http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Person>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Persoon";
-  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Beschrijving> .
 
 <http://ontologie.politie.nl/def/vwm#ContactGegevens> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Party>;
@@ -157,10 +157,22 @@
 <http://ontologie.politie.nl/def/vwm#PersoonSignalement> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Person>;
   <http://www.w3.org/2000/01/rdf-schema#label> "PersoonSignalement";
-  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Signalement> .
 
 <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "ToestandsBeschrijving" .
+
+<http://ontologie.politie.nl/def/vwm#Kern> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Kern";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
+<http://ontologie.politie.nl/def/vwm#Signalement> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Signalement";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Kern> .
+
+<http://ontologie.politie.nl/def/vwm#Beschrijving> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Beschrijving";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Kern> .
 
 <http://ontologie.politie.nl/def/vwm#ToestandsWeergave> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Bestand";
@@ -308,7 +320,7 @@
 <http://ontologie.politie.nl/def/vwm#VoertuigBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Vehicle>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Voertuig";
-  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Beschrijving> .
 
 <http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "VerkeersincidentDossier" .

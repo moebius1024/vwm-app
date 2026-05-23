@@ -468,6 +468,32 @@ class SjabloonMetadataService
         return $map;
     }
 
+    public function fetchTbClassCapabilitiesByTbClasses(array $tbClasses): array
+    {
+        $classes = array_values(array_filter(array_unique(array_filter($tbClasses, fn ($value) => is_string($value) && $value !== ''))));
+        if (empty($classes)) {
+            return [];
+        }
+
+        $hierarchy = $this->fetchSubclassClosureMap();
+        $stateProjectionRoot = 'http://ontologie.politie.nl/def/vwm#ToestandsWeergave';
+        $signalementRoot = 'http://ontologie.politie.nl/def/vwm#Signalement';
+        $descriptionRoot = 'http://ontologie.politie.nl/def/vwm#Beschrijving';
+        $roleRoot = 'http://ontologie.politie.nl/def/vwm#RolBeschrijving';
+
+        $result = [];
+        foreach ($classes as $tbClass) {
+            $result[$tbClass] = [
+                'is_state_projection' => $this->isSubclassOrSelf($tbClass, $stateProjectionRoot, $hierarchy),
+                'is_signalement' => $this->isSubclassOrSelf($tbClass, $signalementRoot, $hierarchy),
+                'is_beschrijving' => $this->isSubclassOrSelf($tbClass, $descriptionRoot, $hierarchy),
+                'is_role_beschrijving' => $this->isSubclassOrSelf($tbClass, $roleRoot, $hierarchy),
+            ];
+        }
+
+        return $result;
+    }
+
     public function fetchRelatieRegels(): array
     {
         $query = '
@@ -964,6 +990,44 @@ class SjabloonMetadataService
         }
 
         return 'text';
+    }
+
+    private function isSubclassOrSelf(string $childClass, string $parentClass, array $hierarchy): bool
+    {
+        if ($childClass === '' || $parentClass === '') {
+            return false;
+        }
+
+        if ($childClass === $parentClass) {
+            return true;
+        }
+
+        $visited = [];
+        $stack = [$parentClass];
+
+        while (! empty($stack)) {
+            $current = array_pop($stack);
+            if (! is_string($current) || isset($visited[$current])) {
+                continue;
+            }
+            $visited[$current] = true;
+
+            foreach ($hierarchy[$current] ?? [] as $descendant) {
+                if (! is_string($descendant)) {
+                    continue;
+                }
+
+                if ($descendant === $childClass) {
+                    return true;
+                }
+
+                if (! isset($visited[$descendant])) {
+                    $stack[] = $descendant;
+                }
+            }
+        }
+
+        return false;
     }
 
     private function assertShapesPresent(): void

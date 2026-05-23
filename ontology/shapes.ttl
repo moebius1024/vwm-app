@@ -329,9 +329,7 @@ vwm:GoicDoelClassConsistencyShape a sh:NodeShape ;
               a ?tbClass .
           ?tbClass vwm:beschrijftClass ?expectedClass .
           FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
-          FILTER(STRENDS(STR(?tbClass), "Beschrijving") || STRENDS(STR(?tbClass), "Signalement"))
-          FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:RolBeschrijving . }
-          FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:ToestandsWeergave . }
+          FILTER EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:Kern . }
         }
         FILTER NOT EXISTS { $this vwm:heeftDoelClass ?doelClass . }
       }
@@ -350,9 +348,7 @@ vwm:GoicDoelClassConsistencyShape a sh:NodeShape ;
         ?tbClass vwm:beschrijftClass ?expectedClass .
         $this vwm:heeftDoelClass ?actualClass .
         FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
-        FILTER(STRENDS(STR(?tbClass), "Beschrijving") || STRENDS(STR(?tbClass), "Signalement"))
-        FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:RolBeschrijving . }
-        FILTER NOT EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:ToestandsWeergave . }
+        FILTER EXISTS { ?tbClass <http://www.w3.org/2000/01/rdf-schema#subClassOf>* vwm:Kern . }
         FILTER (?actualClass != ?expectedClass)
       }
     """ ;

@@ -163,6 +163,7 @@ class MutatieController extends Controller
             }
         }
         $describedClassByTbClass = $this->metadataService->fetchDescribedClassByTbClasses($tbClasses);
+        $tbClassCapabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses($tbClasses);
         $allowedSjabloonCrud = $this->fetchAllowedSjabloonCrudByTbClass((int) $base['transactie_soort_id']);
 
         foreach ($objects as &$object) {
@@ -184,7 +185,7 @@ class MutatieController extends Controller
             $object['target_class'] = $expectedTargetClass;
 
             $crudFlags = $allowedSjabloonCrud[$tbClass] ?? null;
-            $isToestandsWeergave = $this->isToestandsWeergaveTbClass((string) $tbClass);
+            $isToestandsWeergave = $this->tbClassCapabilityEnabled((string) $tbClass, $tbClassCapabilities, 'is_state_projection');
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
             $attachRequested = ! empty($object['attach_to_existing']);
             $isAttachOnlySjabloon = $this->hasCrud($crudFlags, 'A') && ! $this->hasCrud($crudFlags, 'C');
@@ -244,7 +245,8 @@ class MutatieController extends Controller
             $targetClass = (string) ($object['target_class'] ?? '');
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
             $attachToExisting = ! empty($object['attach_to_existing']);
-            $isToestandsWeergave = $this->isToestandsWeergaveTbClass($tbClass);
+            $isToestandsWeergave = $this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_state_projection');
+            $isBeschrijving = $this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_beschrijving');
             $candidateGoicIds = $this->resolveGoicIdsForTargetClass($targetClass, $goicIdsByClass, $classHierarchy);
 
             // In mutatiemodus schrijven we altijd op het gekozen bestaande GOIC.
@@ -281,7 +283,7 @@ class MutatieController extends Controller
                     ], 422);
                 }
 
-                if ($this->isPersoonsBeschrijvingTbClass($tbClass)) {
+                if ($isBeschrijving) {
                     $existingGoicUri = $goicUriById[$existingGoicId] ?? null;
                     if (! is_string($existingGoicUri) || $existingGoicUri === '') {
                         return response()->json([
@@ -292,7 +294,7 @@ class MutatieController extends Controller
                     $attachCheck = $this->evaluateBeschrijvingAttachEligibility((string) $existingGoicUri, $targetClass);
                     if (! $attachCheck['has_signalement']) {
                         return response()->json([
-                            'error' => 'PersoonsBeschrijving toevoegen kan alleen op een object met actief signalement.',
+                            'error' => 'Beschrijving toevoegen kan alleen op een object met actief signalement.',
                         ], 422);
                     }
                     if ($attachCheck['has_beschrijving']) {
@@ -307,7 +309,7 @@ class MutatieController extends Controller
             }
 
             if ($attachToExisting) {
-                if ($this->isPersoonsBeschrijvingTbClass($tbClass)) {
+                if ($isBeschrijving) {
                     return response()->json([
                         'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze beschrijving wilt registreren.",
                     ], 422);
@@ -1594,22 +1596,23 @@ class MutatieController extends Controller
 
     private function isToestandsWeergaveTbClass(string $tbClassUri): bool
     {
-        return str_contains($tbClassUri, 'ToestandsWeergave');
-    }
+        $capabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses([$tbClassUri]);
 
-    private function isPersoonsBeschrijvingTbClass(string $tbClassUri): bool
-    {
-        return Str::endsWith($tbClassUri, 'PersoonsBeschrijving');
+        return $this->tbClassCapabilityEnabled($tbClassUri, $capabilities, 'is_state_projection');
     }
 
     private function isSignalementTbClass(string $tbClassUri): bool
     {
-        return Str::endsWith($tbClassUri, 'Signalement');
+        $capabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses([$tbClassUri]);
+
+        return $this->tbClassCapabilityEnabled($tbClassUri, $capabilities, 'is_signalement');
     }
 
     private function isBeschrijvingTbClass(string $tbClassUri): bool
     {
-        return Str::endsWith($tbClassUri, 'Beschrijving');
+        $capabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses([$tbClassUri]);
+
+        return $this->tbClassCapabilityEnabled($tbClassUri, $capabilities, 'is_beschrijving');
     }
 
     /**
@@ -1631,6 +1634,7 @@ class MutatieController extends Controller
         }
 
         $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses($classUris);
+        $tbClassCapabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses($classUris);
         $hasSignalement = false;
         $hasBeschrijving = false;
 
@@ -1640,10 +1644,10 @@ class MutatieController extends Controller
                 continue;
             }
 
-            if ($this->isSignalementTbClass($tbClass)) {
+            if ($this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_signalement')) {
                 $hasSignalement = true;
             }
-            if ($this->isBeschrijvingTbClass($tbClass)) {
+            if ($this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_beschrijving')) {
                 $hasBeschrijving = true;
             }
         }
@@ -1652,6 +1656,15 @@ class MutatieController extends Controller
             'has_signalement' => $hasSignalement,
             'has_beschrijving' => $hasBeschrijving,
         ];
+    }
+
+    private function tbClassCapabilityEnabled(string $tbClassUri, array $capabilitiesByClass, string $capability): bool
+    {
+        if ($tbClassUri === '') {
+            return false;
+        }
+
+        return (bool) ($capabilitiesByClass[$tbClassUri][$capability] ?? false);
     }
 
     private function getGoicTargetClassMapForCase(int $caseId): array
@@ -1931,6 +1944,11 @@ class MutatieController extends Controller
             // alle actieve rol-TB's en ToestandsWeergaves op die GOIC.
             if ($deleteType === 'toestand') {
                 $activeTbRows = $this->fetchActiveTbRowsForGoic((string) $targetRow->goic_uri);
+                $activeTbClasses = array_values(array_filter(array_map(
+                    fn (array $row) => (string) ($row['tb_class'] ?? ''),
+                    $activeTbRows
+                )));
+                $activeTbCapabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses($activeTbClasses);
                 $remainingAfterDelete = array_values(array_filter($activeTbRows, function (array $row) use ($targetRow) {
                     return ($row['tb_uri'] ?? '') !== (string) $targetRow->tb_uri;
                 }));
@@ -1977,7 +1995,7 @@ class MutatieController extends Controller
                     }
                 }
 
-                $remainingKernel = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules) {
+                $remainingKernel = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules, $activeTbCapabilities) {
                     $tbClass = (string) ($row['tb_class'] ?? '');
                     if ($tbClass === '') {
                         return false;
@@ -1985,22 +2003,24 @@ class MutatieController extends Controller
                     if ($this->isRoleTbClass($tbClass, $roleShapeRules)) {
                         return false;
                     }
-                    if ($this->isToestandsWeergaveTbClass($tbClass)) {
+                    if ($this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection')) {
                         return false;
                     }
                     if (str_contains(strtolower($tbClass), 'dataobjectassociation')) {
                         return false;
                     }
-                    return true;
+                    return $this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_signalement')
+                        || $this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_beschrijving');
                 }));
 
                 if (count($remainingKernel) === 0) {
-                    $cascadeRows = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules) {
+                    $cascadeRows = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules, $activeTbCapabilities) {
                         $tbClass = (string) ($row['tb_class'] ?? '');
                         if ($tbClass === '') {
                             return false;
                         }
-                        return $this->isRoleTbClass($tbClass, $roleShapeRules) || $this->isToestandsWeergaveTbClass($tbClass);
+                        return $this->isRoleTbClass($tbClass, $roleShapeRules)
+                            || $this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection');
                     }));
 
                     if (! empty($cascadeRows)) {

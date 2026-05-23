@@ -360,6 +360,12 @@ interface SjabloonSummary {
   crud_flags?: string | null;
   button_label_register?: string | null;
   button_label_attach?: string | null;
+  capabilities?: {
+    is_state_projection?: boolean;
+    is_signalement?: boolean;
+    is_beschrijving?: boolean;
+    is_role_beschrijving?: boolean;
+  } | null;
 }
 
 interface SelectableSjabloon extends SjabloonSummary {
@@ -436,6 +442,11 @@ interface ObjectBlock {
   fileUploads: Record<string, FileUploadState>;
   existingGoicId: string;
   attachToExisting: boolean;
+  capabilities: {
+    isStateProjection: boolean;
+    isSignalement: boolean;
+    isBeschrijving: boolean;
+  };
 }
 
 const props = defineProps<{
@@ -484,12 +495,8 @@ const fieldErrorKey = (object: ObjectBlock, property: string) => `${object.id}::
 const hasCrud = (flags: string | null | undefined, letter: 'C' | 'R' | 'U' | 'D' | 'A') =>
   String(flags ?? '').toUpperCase().includes(letter);
 
-const isToestandsWeergaveSjabloon = (sjabloon: SjabloonSummary) => {
-  const uri = typeof sjabloon.sjabloon_uri === 'string' ? sjabloon.sjabloon_uri : '';
-  const targetClass = typeof sjabloon.target_class === 'string' ? sjabloon.target_class : '';
-
-  return uri.includes('ToestandsWeergave') || targetClass.includes('ToestandsWeergave');
-};
+const isToestandsWeergaveSjabloon = (sjabloon: SjabloonSummary) =>
+  !!sjabloon.capabilities?.is_state_projection;
 
 const hasAttachCrud = (sjabloon: SjabloonSummary) => hasCrud(sjabloon.crud_flags, 'A');
 const isLegacyToevoegSjabloon = (sjabloon: SjabloonSummary) => isToestandsWeergaveSjabloon(sjabloon);
@@ -863,6 +870,8 @@ const loadClassLabels = async () => {
 };
 
 const initObject = (sjabloon: SjabloonResponse, selectionMode: 'default' | 'attach-existing' = 'default'): ObjectBlock => {
+  const summary = sjablonen.value.find((item) => item.sjabloon_uri === sjabloon.sjabloon_uri);
+  const capabilities = summary?.capabilities ?? null;
   const formData: Record<string, string | string[]> = {};
   const dataTypes: Record<string, 'literal' | 'uri'> = {};
   const fileUploads: Record<string, FileUploadState> = {};
@@ -900,15 +909,16 @@ const initObject = (sjabloon: SjabloonResponse, selectionMode: 'default' | 'atta
     fileUploads,
     existingGoicId: '',
     attachToExisting: selectionMode === 'attach-existing',
+    capabilities: {
+      isStateProjection: !!capabilities?.is_state_projection,
+      isSignalement: !!capabilities?.is_signalement,
+      isBeschrijving: !!capabilities?.is_beschrijving,
+    },
   };
 };
 
 const isToestandsWeergaveObject = (object: ObjectBlock) => {
-  return typeof object.sjabloonUri === 'string' && object.sjabloonUri.includes('ToestandsWeergave');
-};
-
-const isPersoonsBeschrijvingObject = (object: ObjectBlock) => {
-  return typeof object.sjabloonUri === 'string' && object.sjabloonUri.endsWith('PersoonsBeschrijving');
+  return object.capabilities.isStateProjection;
 };
 
 const getToestandClassUri = (tb: ToestandItem) => {
@@ -923,32 +933,33 @@ const getToestandClassUri = (tb: ToestandItem) => {
   return null;
 };
 
-const hasActiveTbClassSuffix = (goic: GoicItem, suffix: string) => {
+const hasActiveTbCapability = (goic: GoicItem, capability: 'is_signalement' | 'is_beschrijving') => {
   return (goic.toestanden ?? []).some((tb) => {
     const classUri = getToestandClassUri(tb);
 
-    return typeof classUri === 'string' && classUri.endsWith(suffix);
+    if (typeof classUri !== 'string' || classUri === '') {
+      return false;
+    }
+
+    const summary = sjablonen.value.find((item) => item.sjabloon_uri === classUri);
+
+    return !!summary?.capabilities?.[capability];
   });
 };
 
-const hasActiveSignalementOnGoic = (goic: GoicItem) => hasActiveTbClassSuffix(goic, 'Signalement');
-const hasActivePersoonsBeschrijvingOnGoic = (goic: GoicItem) =>
-  (goic.toestanden ?? []).some((tb) => {
-    const classUri = getToestandClassUri(tb);
-
-    return typeof classUri === 'string' && classUri.endsWith('PersoonsBeschrijving');
-  });
+const hasActiveSignalementOnGoic = (goic: GoicItem) => hasActiveTbCapability(goic, 'is_signalement');
+const hasActiveBeschrijvingOnGoic = (goic: GoicItem) => hasActiveTbCapability(goic, 'is_beschrijving');
 
 const getExistingGoicOptionsForObject = (object: ObjectBlock) => {
   if (object.attachToExisting) {
     const options = getGoicsForObject(object);
 
-    if (!isPersoonsBeschrijvingObject(object)) {
+    if (!object.capabilities.isBeschrijving) {
       return options;
     }
 
     return options.filter((goic) =>
-      hasActiveSignalementOnGoic(goic) && !hasActivePersoonsBeschrijvingOnGoic(goic)
+      hasActiveSignalementOnGoic(goic) && !hasActiveBeschrijvingOnGoic(goic)
     );
   }
 
@@ -1626,11 +1637,10 @@ const applyMutationTarget = async (target: NonNullable<typeof props.mutationTarg
   roleSelections.value = {};
   selectedSjabloonUri.value = target.sjabloon_uri;
   selectedSjabloonSelectionMode.value = 'default';
-  selectedSjabloonGroupOverride.value = isToestandsWeergaveSjabloon({
-    sjabloon_uri: target.sjabloon_uri,
-    label: null,
-    target_class: sjabloon.target_class,
-  }) ? 'toevoeg' : 'register';
+  const selectedSummary = sjablonen.value.find((item) => item.sjabloon_uri === target.sjabloon_uri);
+  selectedSjabloonGroupOverride.value = selectedSummary && isToestandsWeergaveSjabloon(selectedSummary)
+    ? 'toevoeg'
+    : 'register';
   const block = initObject(sjabloon, 'default');
   block.existingGoicId = String(target.goic_id);
 
