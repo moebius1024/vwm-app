@@ -96,3 +96,4 @@ Gebruik:
 - `readme/Mutatie_Verificatie_Queries.md`
 
 Voor standaardcontrole op Laravel/SPARQL/RDF validatie, gebruik de checklists in deze map.
+ 
