@@ -1,6 +1,6 @@
 # VWM App (Laravel + GraphDB)
 
-Organisaties registreren gegevens vaak alsof er één objectieve werkelijkheid is. Ook worden er op het Internet vooral door AI uitspraken over de werkelijkheid gedaan alsof het onweerlegbare feiten zijn (vaak zonder bronvermelding). In werkelijkheid bestaan er meerdere contexten, perspectieven en bronnen. VWM modelleert uitspraken over de werkelijkheid expliciet, inclusief context, bron, autorisatie en geldigheid. Ook maakt VMW het mogelijk om uitspraken over dezelfde objecten in de werkelijkheid over contexten heen te verbinden en zo te delen met users die aan andere cases werken.
+Organisaties registreren gegevens vaak alsof er één objectieve werkelijkheid is. Ook worden er op het Internet vooral door AI uitspraken over de werkelijkheid gedaan alsof het onweerlegbare feiten zijn (vaak zonder bronvermelding). In werkelijkheid bestaan er meerdere contexten, perspectieven en bronnen. VWM modelleert uitspraken over de werkelijkheid expliciet, inclusief context, bron, autorisatie en geldigheid. Ook maakt VWM het mogelijk om uitspraken over dezelfde objecten in de werkelijkheid over contexten heen te verbinden en zo te delen met users die aan andere cases werken.
 
 VWM is een metadata-gedreven applicatie voor registratie, mutatie en raadpleging van uitspraken over de werkelijkheid.
 
