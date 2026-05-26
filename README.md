@@ -1,14 +1,17 @@
 # VWM App (Laravel + GraphDB)
 
-VWM is een metadata-gedreven applicatie voor registratie, mutatie en raadpleging van onderzoeksgegevens.
-De kern is een scheiding tussen:
+Organisaties registreren gegevens vaak alsof er één objectieve werkelijkheid is. Ook worden er op het Internet vooral door AI uitspraken over de werkelijkheid gedaan alsof het onweerlegbare feiten zijn (vaak zonder bronvermelding). In werkelijkheid bestaan er meerdere contexten, perspectieven en bronnen. VWM modelleert uitspraken over de werkelijkheid expliciet, inclusief context, bron, autorisatie en geldigheid. Ook maakt VMW het mogelijk om uitspraken over dezelfde objecten in de werkelijkheid over contexten heen te verbinden en zo te delen met users die aan andere cases werken.
+
+VWM is een metadata-gedreven applicatie voor registratie, mutatie en raadpleging van uitspraken over de werkelijkheid.
+
+De kern-architectuur van de implementatie is een scheiding tussen:
 
 - Laravel: workflow, autorisatie, UI en audit
 - GraphDB/RDF: domeinmodel, betekenis en validatieregels
 
 ## Inleiding: wat VWM precies vastlegt
 
-VWM registreert primair geen "feiten", maar uitspraken in context.
+VWM registreert primair geen "feiten", maar uitspraken binnen een bepaalde context.
 Een registratie betekent dus: op tijdstip T, in werkcontext C, is deze beschrijving vastgelegd met deze herkomst en autorisatiecontext.
 
 Dat maakt het mogelijk om:
@@ -18,7 +21,7 @@ Dat maakt het mogelijk om:
 
 ## GO en GOIC (de kernbegrippen)
 
-- GO (`GegevensObject`): de "sleutelhanger" van een ding in de werkelijkheid.
+- GO (`GegevensObject`): de "sleutelhanger" die uitspraken over eenzelfde ding in de werkelijkheid samenbindt.
   Een GO representeert het object in de werkelijkheid waarnaar verwezen wordt.
 - GOIC (`GegevensObjectInContext`): datzelfde GO, maar dan binnen een concrete context
   (bijvoorbeeld een specifiek dossier/case met eigen autorisatiekader).
@@ -26,8 +29,8 @@ Dat maakt het mogelijk om:
 
 Belangrijke consequentie:
 - meerdere GOIC's kunnen verwijzen naar dezelfde GO;
-- de inhoudelijke kennis zit in toestandsbeschrijvingen (states) die aan een GOIC hangen;
-- mutaties maken de geschiedenis expliciet (nieuwe state of invalidatie), in plaats van "overschrijven".
+- de inhoudelijke kennis zit in toestandsbeschrijvingen (uitspraken) die aan een GOIC hangen;
+- mutaties maken de historie van de registratie expliciet (append only), in plaats van "overschrijven".
 
 ## Doel van de applicatie
 
@@ -35,7 +38,7 @@ De applicatie ondersteunt het proces van:
 
 1. Case starten en dossier(s) beheren
 2. Objecten in context registreren (GOIC's)
-3. Toestanden muteren/invalideren over tijd
+3. Toestandsbeschrijvingen muteren/invalideren over tijd
 4. Relaties en rollen vastleggen
 5. Inhoud raadplegen binnen autorisatiegrenzen
 
@@ -53,7 +56,7 @@ Belangrijk concept:
 
 ## Belangrijkste functionaliteit
 
-- Dynamische sjablonen op basis van SHACL (`/api/sjabloon/*`)
+- Dynamische sjablonen (een reeks samenhangende properties) op basis van SHACL (`/api/sjabloon/*`)
 - Registreren/muteren/verwijderen van toestanden (`/api/mutatie`)
 - Volgen van een GOIC uit een ander dossier (`/api/goic/volg`)
 - SHACL-validatie op GraphDB (`/api/shacl/validate`)
@@ -61,9 +64,9 @@ Belangrijk concept:
 
 ## Autorisatie (functioneel)
 
-Toegang is gekoppeld aan `case_soort.rechtsgrond_id`.
-De toegestane rechtsgronden voor een user worden afgeleid via:
-`user -> medewerker -> functie -> autorisatie_rol`.
+Toegang is gekoppeld aan de soort Case via `case_soort.rechtsgrond_id`.
+De toegang tot de gegevens binnen een case worden voor een user afgeleid via:
+`user -> medewerker -> functie -> autorisatie_rol.rechtsgrond_id`.
 
 Dat bepaalt:
 - welke cases zichtbaar/toegankelijk zijn
