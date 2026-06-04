@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreMutatieRequest;
 use App\Services\GraphService;
+use App\Services\MutationTargetResolver;
 use App\Services\SjabloonMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -10,32 +12,31 @@ use Illuminate\Support\Str;
 
 class MutatieController extends Controller
 {
-    protected $graphService;
+    protected GraphService $graphService;
 
-    protected $metadataService;
+    protected SjabloonMetadataService $metadataService;
 
-    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService)
+    protected MutationTargetResolver $mutationTargetResolver;
+
+    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService, MutationTargetResolver $mutationTargetResolver)
     {
         $this->graphService = $graphService;
         $this->metadataService = $metadataService;
+        $this->mutationTargetResolver = $mutationTargetResolver;
     }
 
     /**
      * Slaat de formulierdata op in zowel SQLite (audit) als GraphDB (triples).
      */
-    public function storeMutatie(Request $request)
+    public function storeMutatie(StoreMutatieRequest $request)
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
             return response()->json(['error' => 'Niet geauthenticeerd.'], 401);
         }
 
-        // 1. Basisvalidatie
-        $base = $request->validate([
-            'transactie_soort_id' => 'required|integer',
-            'case_id' => 'required|integer',
-        ]);
-        $mode = (string) $request->input('mode', 'register');
+        $base = $request->base();
+        $mode = $request->mode();
 
         $case = DB::table('cases')
             ->where('id', $base['case_id'])
@@ -78,70 +79,16 @@ class MutatieController extends Controller
         }
         $enforceAllowedRole = ! empty($allowedRoleSelectors);
 
-        // 2. Ondersteun meerdere objecten per scherm (en legacy single-object payload)
-        $objects = $request->input('objects');
+        $objects = $request->normalizedObjects();
         $rolesInput = $request->input('roles', []);
         $roleItemsInput = is_array($rolesInput['items'] ?? null) ? $rolesInput['items'] : [];
-        $hasRoleItems = count($roleItemsInput) > 0;
-
-        if (empty($objects) && ! $hasRoleItems) {
-            $legacy = $request->validate([
-                'sjabloon_uri' => 'required|string',
-                'target_class' => 'required|string',
-                'data' => 'required|array',
-            ]);
-
-            $objects = [[
-                'client_id' => 'obj_legacy',
-                'sjabloon_uri' => $legacy['sjabloon_uri'],
-                'target_class' => $legacy['target_class'],
-                'data' => $legacy['data'],
-            ]];
-        } elseif (! empty($objects)) {
-            $request->validate([
-                'objects' => 'required|array|min:1',
-                'objects.*.client_id' => 'required|string',
-                'objects.*.sjabloon_uri' => 'required|string',
-                'objects.*.target_class' => 'required|string',
-                'objects.*.attach_to_existing' => 'sometimes|boolean',
-                'objects.*.existing_goic_id' => 'sometimes|nullable|integer',
-                'objects.*.data' => 'required|array',
-                'objects.*.data_types' => 'sometimes|array',
-                'roles' => 'sometimes|array',
-                'roles.items' => 'sometimes|array',
-                'roles.items.*.roleType' => 'sometimes|string',
-                'roles.items.*.roleTbClass' => 'sometimes|string',
-                'roles.items.*.fromId' => 'sometimes|string',
-                'roles.items.*.toId' => 'sometimes|string',
-                'roles.items.*.fromGoicId' => 'sometimes|integer',
-                'roles.items.*.toGoicId' => 'sometimes|integer',
-            ]);
-        } else {
-            $objects = [];
-            $request->validate([
-                'roles' => 'required|array',
-                'roles.items' => 'required|array|min:1',
-                'roles.items.*.roleType' => 'sometimes|string',
-                'roles.items.*.roleTbClass' => 'sometimes|string',
-                'roles.items.*.fromId' => 'sometimes|string',
-                'roles.items.*.toId' => 'sometimes|string',
-                'roles.items.*.fromGoicId' => 'sometimes|integer',
-                'roles.items.*.toGoicId' => 'sometimes|integer',
-            ]);
-        }
 
         $tbClasses = array_values(array_filter(array_unique(array_map(function ($object) {
             return $object['sjabloon_uri'] ?? null;
         }, $objects))));
         $mutationTargetMeta = null;
         if ($mode === 'mutate') {
-            $target = $request->validate([
-                'target' => 'required|array',
-                'target.goic_id' => 'required|integer',
-                'target.mutatie_id' => 'required|integer',
-                'target.tb_rdf_uri' => 'nullable|string',
-                'target.sjabloon_uri' => 'nullable|string',
-            ])['target'];
+            $target = $request->mutationTarget();
 
             $mutationTargetMeta = DB::table('object_mutaties')
                 ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
@@ -185,7 +132,7 @@ class MutatieController extends Controller
             $object['target_class'] = $expectedTargetClass;
 
             $crudFlags = $allowedSjabloonCrud[$tbClass] ?? null;
-            $isToestandsWeergave = $this->tbClassCapabilityEnabled((string) $tbClass, $tbClassCapabilities, 'is_state_projection');
+            $isToestandsWeergave = $this->mutationTargetResolver->tbClassCapabilityEnabled((string) $tbClass, $tbClassCapabilities, 'is_state_projection');
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
             $attachRequested = ! empty($object['attach_to_existing']);
             $isAttachOnlySjabloon = $this->hasCrud($crudFlags, 'A') && ! $this->hasCrud($crudFlags, 'C');
@@ -223,7 +170,7 @@ class MutatieController extends Controller
             }
         }
 
-        $goicTargetClassMap = $this->getGoicTargetClassMapForCase($base['case_id']);
+        $goicTargetClassMap = $this->mutationTargetResolver->getGoicTargetClassMapForCase($base['case_id']);
         $classHierarchy = $this->metadataService->fetchSubclassClosureMap();
         $goicUriById = [];
         if (! empty($goicTargetClassMap)) {
@@ -245,9 +192,9 @@ class MutatieController extends Controller
             $targetClass = (string) ($object['target_class'] ?? '');
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
             $attachToExisting = ! empty($object['attach_to_existing']);
-            $isToestandsWeergave = $this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_state_projection');
-            $isBeschrijving = $this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_beschrijving');
-            $candidateGoicIds = $this->resolveGoicIdsForTargetClass($targetClass, $goicIdsByClass, $classHierarchy);
+            $isToestandsWeergave = $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_state_projection');
+            $isBeschrijving = $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_beschrijving');
+            $candidateGoicIds = $this->mutationTargetResolver->resolveGoicIdsForTargetClass($targetClass, $goicIdsByClass, $classHierarchy);
 
             // In mutatiemodus schrijven we altijd op het gekozen bestaande GOIC.
             if ($mode === 'mutate' && $mutationTargetMeta) {
@@ -260,6 +207,7 @@ class MutatieController extends Controller
                 }
 
                 $object['existing_goic_id'] = $targetGoicId;
+
                 continue;
             }
 
@@ -271,7 +219,7 @@ class MutatieController extends Controller
                     ], 422);
                 }
 
-                if (! $this->isClassAssignable($targetClass, $existingClass, $classHierarchy)) {
+                if (! $this->mutationTargetResolver->isClassAssignable($targetClass, $existingClass, $classHierarchy)) {
                     return response()->json([
                         'error' => "Geselecteerd object heeft class {$existingClass}, verwacht {$targetClass}.",
                     ], 422);
@@ -291,7 +239,7 @@ class MutatieController extends Controller
                         ], 422);
                     }
 
-                    $attachCheck = $this->evaluateBeschrijvingAttachEligibility((string) $existingGoicUri, $targetClass);
+                    $attachCheck = $this->mutationTargetResolver->evaluateBeschrijvingAttachEligibility((string) $existingGoicUri, $targetClass);
                     if (! $attachCheck['has_signalement']) {
                         return response()->json([
                             'error' => 'Beschrijving toevoegen kan alleen op een object met actief signalement.',
@@ -305,6 +253,7 @@ class MutatieController extends Controller
                 }
 
                 $object['existing_goic_id'] = $existingGoicId;
+
                 continue;
             }
 
@@ -317,6 +266,7 @@ class MutatieController extends Controller
 
                 if (count($candidateGoicIds) === 1) {
                     $object['existing_goic_id'] = $candidateGoicIds[0];
+
                     continue;
                 }
 
@@ -334,6 +284,7 @@ class MutatieController extends Controller
             if ($isToestandsWeergave) {
                 if (count($candidateGoicIds) === 1) {
                     $object['existing_goic_id'] = $candidateGoicIds[0];
+
                     continue;
                 }
 
@@ -889,6 +840,7 @@ class MutatieController extends Controller
                 'case_id' => $validated['case_id'] ?? null,
                 'user_id' => $userId,
             ]);
+
             return response()->json([
                 'error' => 'Gebruik exact één bron_goic_uri per request.',
                 'reason' => 'multiple_input_field',
@@ -900,6 +852,7 @@ class MutatieController extends Controller
                 'case_id' => $validated['case_id'] ?? null,
                 'user_id' => $userId,
             ]);
+
             return response()->json([
                 'error' => 'bron_goic_uri mag geen lijst zijn.',
                 'reason' => 'bron_goic_uri_array',
@@ -925,6 +878,7 @@ class MutatieController extends Controller
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
             ]);
+
             return response()->json([
                 'error' => 'Geen dossier gevonden voor deze case.',
                 'reason' => 'target_case_has_no_dossier',
@@ -938,6 +892,7 @@ class MutatieController extends Controller
                 'user_id' => $userId,
                 'bron_goic_uri' => $validated['bron_goic_uri'] ?? null,
             ]);
+
             return response()->json([
                 'error' => 'Gebruik exact één geldige bron_goic_uri.',
                 'reason' => 'invalid_single_uri_syntax',
@@ -950,6 +905,7 @@ class MutatieController extends Controller
                 'user_id' => $userId,
                 'bron_goic_uri' => $bronGoicUri,
             ]);
+
             return response()->json([
                 'error' => 'Ongeldige bron GOIC URI.',
                 'reason' => 'invalid_uri_format',
@@ -963,6 +919,7 @@ class MutatieController extends Controller
                 'user_id' => $userId,
                 'bron_goic_uri' => $bronGoicUri,
             ]);
+
             return response()->json([
                 'error' => 'Bron GOIC niet gevonden in GraphDB.',
                 'reason' => 'source_meta_missing',
@@ -976,6 +933,7 @@ class MutatieController extends Controller
                 'user_id' => $userId,
                 'bron_goic_uri' => $bronGoicUri,
             ]);
+
             return response()->json([
                 'error' => 'Kon geen GO vinden voor bron GOIC.',
                 'reason' => 'source_go_missing',
@@ -1006,6 +964,7 @@ class MutatieController extends Controller
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
             ]);
+
             return response()->json([
                 'error' => 'Geen transactie-soort beschikbaar.',
                 'reason' => 'transactie_soort_missing',
@@ -1170,6 +1129,7 @@ class MutatieController extends Controller
             $goicId = $goicByUri[$uri] ?? null;
             if (! is_int($goicId) || $goicId <= 0) {
                 $labels[$uri] = $this->resolveGoicLabelFromGraph($uri) ?? "GOIC {$this->shortId($uri)}";
+
                 continue;
             }
 
@@ -1194,6 +1154,7 @@ class MutatieController extends Controller
 
                 if (is_string($kenteken) && trim($kenteken) !== '') {
                     $labels[$uri] = 'Voertuig: '.trim($kenteken);
+
                     continue 2;
                 }
             }
@@ -1594,142 +1555,6 @@ class MutatieController extends Controller
         return 'literal';
     }
 
-    private function isToestandsWeergaveTbClass(string $tbClassUri): bool
-    {
-        $capabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses([$tbClassUri]);
-
-        return $this->tbClassCapabilityEnabled($tbClassUri, $capabilities, 'is_state_projection');
-    }
-
-    private function isSignalementTbClass(string $tbClassUri): bool
-    {
-        $capabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses([$tbClassUri]);
-
-        return $this->tbClassCapabilityEnabled($tbClassUri, $capabilities, 'is_signalement');
-    }
-
-    private function isBeschrijvingTbClass(string $tbClassUri): bool
-    {
-        $capabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses([$tbClassUri]);
-
-        return $this->tbClassCapabilityEnabled($tbClassUri, $capabilities, 'is_beschrijving');
-    }
-
-    /**
-     * @return array{has_signalement:bool,has_beschrijving:bool}
-     */
-    private function evaluateBeschrijvingAttachEligibility(string $goicUri, string $targetClass): array
-    {
-        $activeRows = $this->fetchActiveTbRowsForGoic($goicUri);
-        $tbClasses = [];
-        foreach ($activeRows as $row) {
-            $tbClass = (string) ($row['tb_class'] ?? '');
-            if ($tbClass !== '') {
-                $tbClasses[$tbClass] = true;
-            }
-        }
-        $classUris = array_keys($tbClasses);
-        if (empty($classUris)) {
-            return ['has_signalement' => false, 'has_beschrijving' => false];
-        }
-
-        $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses($classUris);
-        $tbClassCapabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses($classUris);
-        $hasSignalement = false;
-        $hasBeschrijving = false;
-
-        foreach ($classUris as $tbClass) {
-            $describedClass = $describedByTb[$tbClass] ?? null;
-            if (! is_string($describedClass) || $describedClass !== $targetClass) {
-                continue;
-            }
-
-            if ($this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_signalement')) {
-                $hasSignalement = true;
-            }
-            if ($this->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_beschrijving')) {
-                $hasBeschrijving = true;
-            }
-        }
-
-        return [
-            'has_signalement' => $hasSignalement,
-            'has_beschrijving' => $hasBeschrijving,
-        ];
-    }
-
-    private function tbClassCapabilityEnabled(string $tbClassUri, array $capabilitiesByClass, string $capability): bool
-    {
-        if ($tbClassUri === '') {
-            return false;
-        }
-
-        return (bool) ($capabilitiesByClass[$tbClassUri][$capability] ?? false);
-    }
-
-    private function getGoicTargetClassMapForCase(int $caseId): array
-    {
-        $dossierIds = DB::table('dossiers')
-            ->where('case_id', $caseId)
-            ->pluck('id')
-            ->all();
-
-        if (empty($dossierIds)) {
-            return [];
-        }
-
-        $goics = DB::table('gegevens_objecten_in_context')
-            ->whereIn('dossier_id', $dossierIds)
-            ->get(['id'])
-            ->all();
-
-        if (empty($goics)) {
-            return [];
-        }
-
-        $goicIds = array_map(fn ($row) => (int) $row->id, $goics);
-
-        $tbRows = DB::table('object_mutaties')
-            ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-            ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
-            ->orderBy('object_mutaties.created_at')
-            ->orderBy('object_mutaties.id')
-            ->get([
-                'object_mutaties.gegevens_object_in_context_id as goic_id',
-                'toestands_beschrijvingen.beschrijving as tb_class',
-            ]);
-
-        $tbHistoryByGoic = [];
-        $tbClassesInUse = [];
-        foreach ($tbRows as $row) {
-            if (! empty($row->tb_class)) {
-                $tbHistoryByGoic[(int) $row->goic_id][] = (string) $row->tb_class;
-                $tbClassesInUse[(string) $row->tb_class] = true;
-            }
-        }
-
-        if (empty($tbClassesInUse)) {
-            return [];
-        }
-
-        $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_keys($tbClassesInUse));
-        $map = [];
-
-        foreach ($goicIds as $goicId) {
-            $tbHistory = $tbHistoryByGoic[$goicId] ?? [];
-            for ($index = count($tbHistory) - 1; $index >= 0; $index--) {
-                $tbClass = $tbHistory[$index];
-                $candidateTargetClass = $describedByTb[$tbClass] ?? null;
-                if (is_string($candidateTargetClass) && $candidateTargetClass !== '') {
-                    $map[$goicId] = $candidateTargetClass;
-                    break;
-                }
-            }
-        }
-
-        return $map;
-    }
-
     private function collectIdentityEntriesForObjects(array $objects, array $identityRulesByTbClass): array
     {
         $entries = [];
@@ -2003,14 +1828,15 @@ class MutatieController extends Controller
                     if ($this->isRoleTbClass($tbClass, $roleShapeRules)) {
                         return false;
                     }
-                    if ($this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection')) {
+                    if ($this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection')) {
                         return false;
                     }
                     if (str_contains(strtolower($tbClass), 'dataobjectassociation')) {
                         return false;
                     }
-                    return $this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_signalement')
-                        || $this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_beschrijving');
+
+                    return $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_signalement')
+                        || $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_beschrijving');
                 }));
 
                 if (count($remainingKernel) === 0) {
@@ -2019,8 +1845,9 @@ class MutatieController extends Controller
                         if ($tbClass === '') {
                             return false;
                         }
+
                         return $this->isRoleTbClass($tbClass, $roleShapeRules)
-                            || $this->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection');
+                            || $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection');
                     }));
 
                     if (! empty($cascadeRows)) {
@@ -2247,41 +2074,6 @@ class MutatieController extends Controller
         return false;
     }
 
-    private function isClassAssignable(string $expectedClass, string $actualClass, array $classHierarchy): bool
-    {
-        if ($expectedClass === $actualClass) {
-            return true;
-        }
-
-        $children = $classHierarchy[$expectedClass] ?? [];
-
-        return in_array($actualClass, $children, true);
-    }
-
-    private function resolveGoicIdsForTargetClass(string $targetClass, array $goicIdsByClass, array $classHierarchy): array
-    {
-        if ($targetClass === '') {
-            return [];
-        }
-
-        $targets = [$targetClass];
-        $children = $classHierarchy[$targetClass] ?? [];
-        foreach ($children as $child) {
-            if (is_string($child) && $child !== '') {
-                $targets[] = $child;
-            }
-        }
-
-        $ids = [];
-        foreach (array_values(array_unique($targets)) as $classUri) {
-            foreach (($goicIdsByClass[$classUri] ?? []) as $goicId) {
-                $ids[] = $goicId;
-            }
-        }
-
-        return array_values(array_unique($ids));
-    }
-
     /**
      * Voegt automatische role-items toe op basis van regels uit de ontologie/shapes.
      */
@@ -2467,6 +2259,7 @@ class MutatieController extends Controller
             logger()->warning('Kon actieve TB-rows voor cascade niet uit GraphDB lezen', [
                 'message' => $e->getMessage(),
             ]);
+
             return [];
         }
 
@@ -2516,6 +2309,7 @@ class MutatieController extends Controller
             return false;
         }
         $allowed = $this->fetchAllowedSjabloonCrudByTbClass($transactieSoortId);
+
         return $this->hasCrud($allowed[$tbClass] ?? null, 'D');
     }
 }

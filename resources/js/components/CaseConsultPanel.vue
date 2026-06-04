@@ -54,6 +54,13 @@ type Props = {
   } | null;
 };
 
+type TbClassCapabilities = {
+  is_state_projection?: boolean;
+  is_signalement?: boolean;
+  is_beschrijving?: boolean;
+  is_role_beschrijving?: boolean;
+};
+
 const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'select-mutate', target: {
@@ -78,6 +85,7 @@ const classOrder = ref<Record<string, number>>({});
 const classCrudMap = ref<Record<string, string>>({});
 const sjabloonCrudMap = ref<Record<string, string>>({});
 const sjabloonOrderMap = ref<Record<string, number>>({});
+const tbClassCapabilitiesMap = ref<Record<string, TbClassCapabilities>>({});
 const roleCrudMap = ref<Record<string, string>>({});
 const roleCrudByTypeMap = ref<Record<string, string>>({});
 
@@ -533,6 +541,7 @@ const loadSjabloonOrder = async () => {
     classCrudMap.value = {};
     sjabloonCrudMap.value = {};
     sjabloonOrderMap.value = {};
+    tbClassCapabilitiesMap.value = {};
     roleCrudMap.value = {};
     roleCrudByTypeMap.value = {};
 
@@ -547,9 +556,10 @@ const loadSjabloonOrder = async () => {
     const crudByClass: Record<string, string> = {};
     const crudBySjabloon: Record<string, string> = {};
     const orderBySjabloon: Record<string, number> = {};
+    const capabilitiesBySjabloon: Record<string, TbClassCapabilities> = {};
     const crudByRole: Record<string, string> = {};
     const crudByRoleType: Record<string, string> = {};
-    allowed.forEach((item: { target_class?: string | null; volgorde?: number }, index: number) => {
+    allowed.forEach((item: { target_class?: string | null; volgorde?: number; capabilities?: TbClassCapabilities | null }, index: number) => {
       if (!item.target_class) {
 return;
 }
@@ -561,6 +571,7 @@ return;
       if (uri) {
         crudBySjabloon[uri] = String((item as { crud_flags?: string | null }).crud_flags ?? 'CRUD').toUpperCase();
         orderBySjabloon[uri] = item.volgorde ?? index + 1;
+        capabilitiesBySjabloon[uri] = item.capabilities ?? {};
       }
     });
     allowedRoles.forEach((item: { tb_class?: string | null; role_type?: string | null; crud_flags?: string | null }) => {
@@ -578,6 +589,7 @@ return;
     classCrudMap.value = crudByClass;
     sjabloonCrudMap.value = crudBySjabloon;
     sjabloonOrderMap.value = orderBySjabloon;
+    tbClassCapabilitiesMap.value = capabilitiesBySjabloon;
     roleCrudMap.value = crudByRole;
     roleCrudByTypeMap.value = crudByRoleType;
   } catch (error) {
@@ -586,6 +598,7 @@ return;
     classCrudMap.value = {};
     sjabloonCrudMap.value = {};
     sjabloonOrderMap.value = {};
+    tbClassCapabilitiesMap.value = {};
     roleCrudMap.value = {};
     roleCrudByTypeMap.value = {};
   }
@@ -863,9 +876,9 @@ const deleteRoleToestand = async (goic: GoicItem, tb: ToestandItem) => {
 };
 
 const isToestandsWeergaveToestand = (tb: ToestandItem) => {
-  const marker = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+  const key = tb.tb_class ?? tb.sjabloon_uri ?? '';
 
-  return marker.includes('toestandsweergave');
+  return !!tbClassCapabilitiesMap.value[key]?.is_state_projection;
 };
 
 const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
