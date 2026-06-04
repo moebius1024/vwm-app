@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreMutatieRequest;
 use App\Services\GraphService;
 use App\Services\MutationTargetResolver;
+use App\Services\RoleMutationService;
 use App\Services\SjabloonMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -18,11 +19,14 @@ class MutatieController extends Controller
 
     protected MutationTargetResolver $mutationTargetResolver;
 
-    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService, MutationTargetResolver $mutationTargetResolver)
+    protected RoleMutationService $roleMutationService;
+
+    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService, MutationTargetResolver $mutationTargetResolver, RoleMutationService $roleMutationService)
     {
         $this->graphService = $graphService;
         $this->metadataService = $metadataService;
         $this->mutationTargetResolver = $mutationTargetResolver;
+        $this->roleMutationService = $roleMutationService;
     }
 
     /**
@@ -63,21 +67,10 @@ class MutatieController extends Controller
 
         $relatieRegels = $this->metadataService->fetchRelatieRegels();
         $rolTypesByKey = $this->metadataService->fetchRolTypesByKey();
-        $allowedRoleRows = DB::table('transactie_soort_sjabloon')
-            ->where('transactie_soort_id', $base['transactie_soort_id'])
-            ->where('type', 'rol')
-            ->orderBy('volgorde')
-            ->get(['sjabloon_uri', 'crud_flags'])
-            ->all();
-        $allowedRoleSelectors = array_values(array_filter(array_map(fn ($row) => $row->sjabloon_uri ?? null, $allowedRoleRows)));
-        $roleCrudBySelector = [];
-        foreach ($allowedRoleRows as $row) {
-            if (! is_string($row->sjabloon_uri ?? null) || $row->sjabloon_uri === '') {
-                continue;
-            }
-            $roleCrudBySelector[$row->sjabloon_uri] = strtoupper((string) ($row->crud_flags ?? 'CRD'));
-        }
-        $enforceAllowedRole = ! empty($allowedRoleSelectors);
+        $allowedRoleConfiguration = $this->roleMutationService->fetchAllowedRoleConfiguration((int) $base['transactie_soort_id']);
+        $allowedRoleSelectors = $allowedRoleConfiguration['allowed_selectors'];
+        $roleCrudBySelector = $allowedRoleConfiguration['crud_by_selector'];
+        $enforceAllowedRole = $allowedRoleConfiguration['enforce_allowed'];
 
         $objects = $request->normalizedObjects();
         $rolesInput = $request->input('roles', []);
@@ -111,7 +104,7 @@ class MutatieController extends Controller
         }
         $describedClassByTbClass = $this->metadataService->fetchDescribedClassByTbClasses($tbClasses);
         $tbClassCapabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses($tbClasses);
-        $allowedSjabloonCrud = $this->fetchAllowedSjabloonCrudByTbClass((int) $base['transactie_soort_id']);
+        $allowedSjabloonCrud = $this->roleMutationService->fetchAllowedSjabloonCrudByTbClass((int) $base['transactie_soort_id']);
 
         foreach ($objects as &$object) {
             $tbClass = $object['sjabloon_uri'] ?? null;
@@ -135,13 +128,13 @@ class MutatieController extends Controller
             $isToestandsWeergave = $this->mutationTargetResolver->tbClassCapabilityEnabled((string) $tbClass, $tbClassCapabilities, 'is_state_projection');
             $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
             $attachRequested = ! empty($object['attach_to_existing']);
-            $isAttachOnlySjabloon = $this->hasCrud($crudFlags, 'A') && ! $this->hasCrud($crudFlags, 'C');
+            $isAttachOnlySjabloon = $this->roleMutationService->hasCrud($crudFlags, 'A') && ! $this->roleMutationService->hasCrud($crudFlags, 'C');
             $isAttachIntent = $attachRequested || ($existingGoicId !== null && $existingGoicId > 0) || $isToestandsWeergave || $isAttachOnlySjabloon;
 
             $object['attach_to_existing'] = $isAttachIntent;
 
             if ($mode !== 'mutate') {
-                $attachAllowed = $this->hasCrud($crudFlags, 'A') || ($isToestandsWeergave && $this->hasCrud($crudFlags, 'C'));
+                $attachAllowed = $this->roleMutationService->hasCrud($crudFlags, 'A') || ($isToestandsWeergave && $this->roleMutationService->hasCrud($crudFlags, 'C'));
 
                 if ($isAttachIntent && ! $attachAllowed) {
                     return response()->json([
@@ -149,7 +142,7 @@ class MutatieController extends Controller
                     ], 422);
                 }
 
-                if (! $isAttachIntent && ! $this->hasCrud($crudFlags, 'C')) {
+                if (! $isAttachIntent && ! $this->roleMutationService->hasCrud($crudFlags, 'C')) {
                     return response()->json([
                         'error' => "Aanmaken niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
                     ], 422);
@@ -163,7 +156,7 @@ class MutatieController extends Controller
             if ($tbClass === '') {
                 return response()->json(['error' => 'Mutatiedoel heeft een onbekende class.'], 422);
             }
-            if (! $this->hasCrud($allowedSjabloonCrud[$tbClass] ?? null, 'U')) {
+            if (! $this->roleMutationService->hasCrud($allowedSjabloonCrud[$tbClass] ?? null, 'U')) {
                 return response()->json([
                     'error' => "Muteren niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
                 ], 422);
@@ -675,10 +668,10 @@ class MutatieController extends Controller
                     continue;
                 }
 
-                if ($enforceAllowedRole && ! $this->isAllowedRoleSelection($roleType, $roleTbClass, $allowedRoleSelectors, $roleShapeRules)) {
+                if ($enforceAllowedRole && ! $this->roleMutationService->isAllowedRoleSelection($roleType, $roleTbClass, $allowedRoleSelectors, $roleShapeRules)) {
                     continue;
                 }
-                if (! $isAutoRole && ! $this->isRoleCreateAllowed($roleType, $roleTbClass, $roleCrudBySelector, $roleShapeRules)) {
+                if (! $isAutoRole && ! $this->roleMutationService->isRoleCreateAllowed($roleType, $roleTbClass, $roleCrudBySelector, $roleShapeRules)) {
                     continue;
                 }
 
@@ -1410,42 +1403,6 @@ class MutatieController extends Controller
         }
     }
 
-    private function isAllowedRoleSelection(?string $roleType, ?string $roleSelector, array $allowedSelectors, array $roleShapeRules): bool
-    {
-        foreach ($allowedSelectors as $allowedSelector) {
-            if (! is_string($allowedSelector) || $allowedSelector === '') {
-                continue;
-            }
-
-            if ($roleSelector === $allowedSelector || $roleType === $allowedSelector) {
-                return true;
-            }
-
-            $allowedRule = $this->metadataService->resolveRoleShapeRuleFromSelector($allowedSelector, $roleShapeRules);
-            $allowedRoleType = $allowedRule['rolType'] ?? null;
-
-            if (! is_string($allowedRoleType) || $allowedRoleType === '') {
-                continue;
-            }
-
-            if (is_string($roleType) && $roleType !== '' && $roleType === $allowedRoleType) {
-                return true;
-            }
-
-            if (! is_string($roleSelector) || $roleSelector === '') {
-                continue;
-            }
-
-            $selectedRule = $this->metadataService->resolveRoleShapeRuleFromSelector($roleSelector, $roleShapeRules);
-            $selectedRoleType = $selectedRule['rolType'] ?? null;
-            if (is_string($selectedRoleType) && $selectedRoleType !== '' && $selectedRoleType === $allowedRoleType) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     private function toSparqlValue(mixed $value, string $type): string
     {
         if ($type === 'uri' && is_string($value)) {
@@ -1732,11 +1689,11 @@ class MutatieController extends Controller
         }
         $deleteType = (string) ($payload['delete_type'] ?? '');
         if ($deleteType === 'role') {
-            if (! $this->isRoleDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
+            if (! $this->roleMutationService->isRoleDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
                 return response()->json(['error' => 'Verwijderen niet toegestaan voor deze rol in deze transactie.'], 422);
             }
         } else {
-            if ($this->isRoleTbClass((string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
+            if ($this->roleMutationService->isRoleTbClass((string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
                 return response()->json(['error' => 'Gebruik rol-verwijderen voor roltoestanden.'], 422);
             }
             if (! $this->isClassDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''))) {
@@ -1825,7 +1782,7 @@ class MutatieController extends Controller
                     if ($tbClass === '') {
                         return false;
                     }
-                    if ($this->isRoleTbClass($tbClass, $roleShapeRules)) {
+                    if ($this->roleMutationService->isRoleTbClass($tbClass, $roleShapeRules)) {
                         return false;
                     }
                     if ($this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection')) {
@@ -1846,7 +1803,7 @@ class MutatieController extends Controller
                             return false;
                         }
 
-                        return $this->isRoleTbClass($tbClass, $roleShapeRules)
+                        return $this->roleMutationService->isRoleTbClass($tbClass, $roleShapeRules)
                             || $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection');
                     }));
 
@@ -1977,101 +1934,6 @@ class MutatieController extends Controller
         }
 
         return [$fromId, $toId];
-    }
-
-    private function hasCrud(?string $flags, string $required): bool
-    {
-        return str_contains(strtoupper((string) ($flags ?? 'CRUD')), strtoupper($required));
-    }
-
-    private function fetchAllowedSjabloonCrudByTbClass(int $transactieSoortId): array
-    {
-        $rows = DB::table('transactie_soort_sjabloon')
-            ->where('transactie_soort_id', $transactieSoortId)
-            ->where('type', 'sjabloon')
-            ->get(['sjabloon_uri', 'crud_flags'])
-            ->all();
-
-        $crudByTbClass = [];
-        foreach ($rows as $row) {
-            $uri = $row->sjabloon_uri ?? null;
-            if (! is_string($uri) || $uri === '') {
-                continue;
-            }
-            $crudByTbClass[$uri] = strtoupper((string) ($row->crud_flags ?? 'CRUD'));
-        }
-
-        return $crudByTbClass;
-    }
-
-    private function isRoleCreateAllowed(?string $roleType, ?string $roleSelector, array $roleCrudBySelector, array $roleShapeRules): bool
-    {
-        foreach ($roleCrudBySelector as $selector => $flags) {
-            if (! $this->hasCrud($flags, 'C')) {
-                continue;
-            }
-            if ($roleSelector === $selector || $roleType === $selector) {
-                return true;
-            }
-
-            $rule = $this->metadataService->resolveRoleShapeRuleFromSelector($selector, $roleShapeRules);
-            $candidateRoleTbClass = $rule['rolTbClass'] ?? null;
-            $candidateRoleType = $rule['rolType'] ?? null;
-            if (is_string($roleSelector) && $roleSelector !== '' && $roleSelector === $candidateRoleTbClass) {
-                return true;
-            }
-            if (is_string($roleType) && $roleType !== '' && $roleType === $candidateRoleType) {
-                return true;
-            }
-        }
-
-        return empty($roleCrudBySelector);
-    }
-
-    private function isRoleDeleteAllowed(int $transactieSoortId, string $roleTbClass, array $roleShapeRules): bool
-    {
-        $rows = DB::table('transactie_soort_sjabloon')
-            ->where('transactie_soort_id', $transactieSoortId)
-            ->where('type', 'rol')
-            ->get(['sjabloon_uri', 'crud_flags'])
-            ->all();
-
-        foreach ($rows as $row) {
-            if (! $this->hasCrud((string) ($row->crud_flags ?? 'CRD'), 'D')) {
-                continue;
-            }
-            $selector = $row->sjabloon_uri ?? null;
-            if (! is_string($selector) || $selector === '') {
-                continue;
-            }
-            if ($selector === $roleTbClass) {
-                return true;
-            }
-
-            $rule = $this->metadataService->resolveRoleShapeRuleFromSelector($selector, $roleShapeRules);
-            $candidateRoleTbClass = $rule['rolTbClass'] ?? null;
-            if (is_string($candidateRoleTbClass) && $candidateRoleTbClass === $roleTbClass) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private function isRoleTbClass(string $tbClass, array $roleShapeRules): bool
-    {
-        if ($tbClass === '') {
-            return false;
-        }
-
-        foreach ($roleShapeRules as $rule) {
-            $candidate = $rule['rolTbClass'] ?? null;
-            if (is_string($candidate) && $candidate === $tbClass) {
-                return true;
-            }
-        }
-
-        return false;
     }
 
     /**
@@ -2308,8 +2170,8 @@ class MutatieController extends Controller
         if ($tbClass === '') {
             return false;
         }
-        $allowed = $this->fetchAllowedSjabloonCrudByTbClass($transactieSoortId);
+        $allowed = $this->roleMutationService->fetchAllowedSjabloonCrudByTbClass($transactieSoortId);
 
-        return $this->hasCrud($allowed[$tbClass] ?? null, 'D');
+        return $this->roleMutationService->hasCrud($allowed[$tbClass] ?? null, 'D');
     }
 }
