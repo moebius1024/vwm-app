@@ -28,4 +28,5 @@ yarn-error.log
 /.zed
 
 # local documents
+/Docs/
 /docs/
