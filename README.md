@@ -97,5 +97,54 @@ Voor ontologie/shapes geldt: wijzig `ontology/*.ttl` en synchroniseer daarna naa
 ```bash
 php scripts/update_ontologie_graphdb.php
 ```
+## VWM-app zelf installeren
+
+Een clone van de vwm-app bevat de applicatie en het modelmateriaal, maar niet de lokale omgeving, dependencies, .env, database-inhoud en GraphDB-repository. Die moeten na clone reproduceerbaar worden opgebouwd.
+
+## Laravel omgeving opbouwen & GraphDB installeren
+
+Ik adviseer voor Windows/Mac Laravel Herd te gebruiken voor PHP, nginx e.d. (gebruik PHP 8.4).
+===
+Opbouwen:
+git clone <repository-url>
+cd vwm-app
+
+composer install
+npm install
+
+cp .env.example .env
+php artisan key:generate
+
+touch database/database.sqlite
+php artisan migrate
+php artisan db:seed
+
+npm run dev
+php artisan serve
+===
+In .env moet tenminste staan:
+APP_NAME="VWM App"
+APP_ENV=local
+APP_DEBUG=true
+APP_URL=http://vwm-app.test
+
+DB_CONNECTION=sqlite
+# of mysql/postgresql, afhankelijk van jouw keuze
+===
+Install GraphDB
+Create repository: vwm
+Configure GRAPHDB_ENDPOINT and GRAPHDB_REPOSITORY in .env
+===
+GRAPHDB_ENDPOINT=http://localhost:7200
+GRAPHDB_REPOSITORY=vwm
+GRAPHDB_USER=
+GRAPHDB_PASSWORD=
+
+VWM_BASE_URI=http://example.org/vwm/
+===
+
+Load ontology, SHACL shapes and demo data into GraphDB
+
+## Verdere Afspraken
 
 Voor meer operationele afspraken, zie de documenten in `readme/`.
