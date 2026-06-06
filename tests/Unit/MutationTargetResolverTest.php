@@ -64,6 +64,70 @@ test('it resolves goic ids for a target class and its subclasses', function () {
         ->toBe([]);
 });
 
+test('it keeps the most specific target class from tb history', function () {
+    $resolver = makeMutationTargetResolver();
+
+    $describedByTb = [
+        'http://example.test/PersoonsBeschrijving' => 'http://example.test/Person',
+        'http://example.test/ContactGegevens' => 'http://example.test/Party',
+    ];
+    $classHierarchy = [
+        'http://example.test/Party' => [
+            'http://example.test/Person',
+            'http://example.test/Onderneming',
+        ],
+    ];
+
+    expect($resolver->resolveMostSpecificTargetClassFromTbHistory([
+        'http://example.test/PersoonsBeschrijving',
+        'http://example.test/ContactGegevens',
+    ], $describedByTb, $classHierarchy))->toBe('http://example.test/Person')
+        ->and($resolver->resolveMostSpecificTargetClassFromTbHistory([
+            'http://example.test/ContactGegevens',
+        ], $describedByTb, $classHierarchy))->toBe('http://example.test/Party');
+});
+
+test('it reads explicit goic target classes from graphdb', function () {
+    $graphService = Mockery::mock(GraphService::class);
+    $metadataService = Mockery::mock(SjabloonMetadataService::class);
+    $resolver = new MutationTargetResolver($graphService, $metadataService);
+
+    $graphService
+        ->shouldReceive('query')
+        ->once()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, 'vwm:heeftDoelClass')
+            && str_contains($query, 'GRAPH <http://vwm.voorbeeld.nl/data/onderzoek>')
+            && str_contains($query, '<http://example.test/goic/person>')))
+        ->andReturn([
+            [
+                'goic' => 'http://example.test/goic/person',
+                'targetClass' => 'http://example.test/Person',
+            ],
+        ]);
+
+    expect($resolver->fetchExplicitGoicTargetClassMap([
+        10 => 'http://example.test/goic/person',
+        11 => 'http://example.test/goic/without-class',
+    ]))->toBe([
+        10 => 'http://example.test/Person',
+    ]);
+});
+
+test('it falls back when explicit goic target classes cannot be read from graphdb', function () {
+    $graphService = Mockery::mock(GraphService::class);
+    $metadataService = Mockery::mock(SjabloonMetadataService::class);
+    $resolver = new MutationTargetResolver($graphService, $metadataService);
+
+    $graphService
+        ->shouldReceive('query')
+        ->once()
+        ->andThrow(new RuntimeException('GraphDB niet beschikbaar'));
+
+    expect($resolver->fetchExplicitGoicTargetClassMap([
+        10 => 'http://example.test/goic/person',
+    ]))->toBe([]);
+});
+
 test('it evaluates beschrijving attach eligibility from active graph rows', function () {
     $goicUri = 'http://example.test/goic/1';
     $targetClass = 'http://example.test/Person';

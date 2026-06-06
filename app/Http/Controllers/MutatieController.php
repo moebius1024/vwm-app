@@ -10,6 +10,7 @@ use App\Services\SjabloonMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 
 class MutatieController extends Controller
 {
@@ -506,47 +507,9 @@ class MutatieController extends Controller
                 $existingGoicIds = array_map(fn ($row) => $row->id, $existingGoics);
             }
 
-            $tbHistoryByGoic = [];
-            $tbClassesInUse = [];
-            if (! empty($existingGoicIds)) {
-                $tbRows = DB::table('object_mutaties')
-                    ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-                    ->whereIn('object_mutaties.gegevens_object_in_context_id', $existingGoicIds)
-                    ->orderBy('object_mutaties.created_at')
-                    ->orderBy('object_mutaties.id')
-                    ->get([
-                        'object_mutaties.gegevens_object_in_context_id as goic_id',
-                        'toestands_beschrijvingen.beschrijving as tb_class',
-                    ]);
-
-                foreach ($tbRows as $row) {
-                    if (! empty($row->tb_class)) {
-                        $tbHistoryByGoic[$row->goic_id][] = $row->tb_class;
-                        $tbClassesInUse[$row->tb_class] = true;
-                    }
-                }
-            }
-
-            $describedByTb = [];
-            if (! empty($tbClassesInUse)) {
-                $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_keys($tbClassesInUse));
-            }
-
             $goicMetaById = [];
             foreach ($existingGoics as $goic) {
-                $tbHistory = $tbHistoryByGoic[$goic->id] ?? [];
-                $targetClass = null;
-
-                // Neem de meest recente TB die echt een domeinclass beschrijft;
-                // rol-mutaties mogen de class van het bronobject niet "overschrijven".
-                for ($index = count($tbHistory) - 1; $index >= 0; $index--) {
-                    $tbClass = $tbHistory[$index];
-                    $candidateTargetClass = $describedByTb[$tbClass] ?? null;
-                    if (is_string($candidateTargetClass) && $candidateTargetClass !== '') {
-                        $targetClass = $candidateTargetClass;
-                        break;
-                    }
-                }
+                $targetClass = $goicTargetClassMap[(int) $goic->id] ?? null;
 
                 $goicMetaById[$goic->id] = [
                     'goic_id' => $goic->id,
@@ -570,43 +533,11 @@ class MutatieController extends Controller
 
             // 4. Rollen (generiek via rol-regels)
             $roles = $request->input('roles', []);
-            $roleItems = is_array($roles['items'] ?? null) ? $roles['items'] : [];
-            $roleTbClassesFromItems = array_values(array_filter(array_map(function ($item) {
-                return $item['roleTbClass'] ?? null;
-            }, $roleItems)));
+            $roleItems = $this->roleMutationService->normalizeRoleItems(is_array($roles) ? $roles : [], $rolTypesByKey);
+            $roleTbClassesFromItems = $this->roleMutationService->collectRoleTbClasses($roleItems);
             $rolTbMetaByClass = $this->metadataService->fetchRolTbMetaByClasses($roleTbClassesFromItems);
 
-            $clientMap = [];
-            foreach ($objectMeta as $meta) {
-                if (! empty($meta['client_id'])) {
-                    $clientMap[$meta['client_id']] = $meta;
-                }
-            }
-
-            // Legacy payloads: elke key onder roles (behalve items) is een roleKey uit RDF.
-            foreach ($roles as $roleKey => $legacyRoles) {
-                if ($roleKey === 'items' || ! is_array($legacyRoles)) {
-                    continue;
-                }
-
-                $roleTypeUri = $rolTypesByKey[$roleKey] ?? null;
-                if (! $roleTypeUri) {
-                    continue;
-                }
-
-                foreach ($legacyRoles as $role) {
-                    if (! is_array($role)) {
-                        continue;
-                    }
-
-                    [$fromId, $toId] = $this->extractLegacyRoleEndpoints($role);
-                    $roleItems[] = [
-                        'roleType' => $roleTypeUri,
-                        'fromId' => $fromId,
-                        'toId' => $toId,
-                    ];
-                }
-            }
+            $clientMap = $this->roleMutationService->buildClientMap($objectMeta);
 
             $roleItems = $this->appendAutoRoleItems(
                 $roleItems,
@@ -616,141 +547,73 @@ class MutatieController extends Controller
                 $roleShapeRules
             );
 
-            foreach ($roleItems as $roleItem) {
-                $roleType = $roleItem['roleType'] ?? null;
-                $roleTbClass = $roleItem['roleTbClass'] ?? null;
-                $fromId = $roleItem['fromId'] ?? null;
-                $toId = $roleItem['toId'] ?? null;
-                $fromGoicId = $roleItem['fromGoicId'] ?? null;
-                $toGoicId = $roleItem['toGoicId'] ?? null;
-                $toUri = $roleItem['toUri'] ?? null;
-                $isAutoRole = (bool) ($roleItem['isAuto'] ?? false);
+            $roleMutationPlans = $this->roleMutationService->buildRoleMutationPlans(
+                $roleItems,
+                $rolTbMetaByClass,
+                $roleShapeRules,
+                $allowedRoleSelectors,
+                $roleCrudBySelector,
+                $enforceAllowedRole,
+                $goicMetaById,
+                $clientMap,
+                $goicByClass
+            );
 
-                if ((empty($roleType) && empty($roleTbClass)) || (empty($fromId) && empty($fromGoicId))) {
-                    continue;
+            foreach ($roleMutationPlans as $rolePlan) {
+                $roleTbUuid = (string) Str::uuid();
+                $roleTbUri = 'http://vwm.voorbeeld.nl/data/tb/'.$roleTbUuid;
+                $roleMutatieUuid = (string) Str::uuid();
+                $roleMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.$roleMutatieUuid;
+
+                $roleData = [
+                    'van' => $rolePlan['from_goic_uri'],
+                    'naar' => $rolePlan['to_goic_uri'],
+                ];
+                if (! empty($rolePlan['role_type'])) {
+                    $roleData['rolType'] = $rolePlan['role_type'];
                 }
 
-                $roleMeta = null;
-                if (! empty($roleTbClass)) {
-                    $roleMeta = $rolTbMetaByClass[$roleTbClass] ?? null;
+                $roleTbId = DB::table('toestands_beschrijvingen')->insertGetId([
+                    'uuid' => $roleTbUuid,
+                    'rdf_uri' => $roleTbUri,
+                    'beschrijving' => $rolePlan['role_tb_class'],
+                    'toestand_data' => null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                DB::table('object_mutaties')->insert([
+                    'transactie_id' => $transactieId,
+                    'sjabloon_uri' => $rolePlan['role_tb_class'],
+                    'object_uri' => $roleTbUri,
+                    'gegevens_object_in_context_id' => $rolePlan['from_goic_id'],
+                    'geproduceerde_toestand_id' => $roleTbId,
+                    'datum_tijd' => now(),
+                    'data' => json_encode($roleData),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                $allTriples .= "<{$roleTbUri}> a <{$rolePlan['role_tb_class']}> . \n";
+                $allTriples .= "<{$roleTbUri}> <{$rolePlan['van_property']}> <{$rolePlan['from_goic_uri']}> . \n";
+                $allTriples .= "<{$roleTbUri}> <{$rolePlan['naar_property']}> <{$rolePlan['to_goic_uri']}> . \n";
+                if (! empty($rolePlan['role_type'])) {
+                    $allTriples .= "<{$roleTbUri}> <{$vwm}rolType> <{$rolePlan['role_type']}> . \n";
                 }
+                $allTriples .= "<{$roleTbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
 
-                if (! $roleMeta && ! empty($roleType)) {
-                    $regel = $roleShapeRules[$roleType] ?? null;
-                    if ($regel) {
-                        $roleMeta = [
-                            'rolTbClass' => $regel['rolTbClass'] ?? null,
-                            'vanClass' => $regel['vanClass'] ?? null,
-                            'naarClass' => $regel['naarClass'] ?? null,
-                            'vanProperty' => $regel['vanProperty'] ?? null,
-                            'naarProperty' => $regel['naarProperty'] ?? null,
-                        ];
-                    }
-                }
+                $allTriples .= "<{$roleMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
+                $allTriples .= "<{$roleMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$rolePlan['from_goic_uri']}> . \n";
+                $allTriples .= "<{$roleMutatieUri}> <{$vwm}produceert> <{$roleTbUri}> . \n";
+                $allTriples .= "<{$roleMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
+            }
 
-                if (! $roleMeta && ! empty($roleTbClass)) {
-                    $regel = $this->metadataService->resolveRoleShapeRuleFromSelector($roleTbClass, $roleShapeRules);
-                    if ($regel) {
-                        if (empty($roleType) && ! empty($regel['rolType'])) {
-                            $roleType = $regel['rolType'];
-                        }
-                        $roleMeta = [
-                            'rolTbClass' => $regel['rolTbClass'] ?? null,
-                            'vanClass' => $regel['vanClass'] ?? null,
-                            'naarClass' => $regel['naarClass'] ?? null,
-                            'vanProperty' => $regel['vanProperty'] ?? null,
-                            'naarProperty' => $regel['naarProperty'] ?? null,
-                        ];
-                    }
-                }
+            $producedMutationCount = DB::table('object_mutaties')
+                ->where('transactie_id', $transactieId)
+                ->count();
 
-                if (! $roleMeta || empty($roleMeta['rolTbClass'])) {
-                    continue;
-                }
-
-                if ($enforceAllowedRole && ! $this->roleMutationService->isAllowedRoleSelection($roleType, $roleTbClass, $allowedRoleSelectors, $roleShapeRules)) {
-                    continue;
-                }
-                if (! $isAutoRole && ! $this->roleMutationService->isRoleCreateAllowed($roleType, $roleTbClass, $roleCrudBySelector, $roleShapeRules)) {
-                    continue;
-                }
-
-                $fromMeta = null;
-                if (! empty($fromGoicId) && ! empty($goicMetaById[$fromGoicId])) {
-                    $fromMeta = $goicMetaById[$fromGoicId];
-                } elseif (! empty($fromId) && ! empty($clientMap[$fromId])) {
-                    $fromMeta = $clientMap[$fromId];
-                }
-
-                if (! $fromMeta || $fromMeta['target_class'] !== $roleMeta['vanClass']) {
-                    continue;
-                }
-
-                $targetGoics = [];
-                if (is_string($toUri) && $toUri !== '') {
-                    $targetGoics[] = $toUri;
-                } elseif (! empty($toGoicId) && ! empty($goicMetaById[$toGoicId])) {
-                    $toMeta = $goicMetaById[$toGoicId];
-                    if ($toMeta['target_class'] === $roleMeta['naarClass']) {
-                        $targetGoics[] = $toMeta['goic_uri'];
-                    }
-                } elseif (! empty($toId) && ! empty($clientMap[$toId])) {
-                    $toMeta = $clientMap[$toId];
-                    if ($toMeta['target_class'] === $roleMeta['naarClass']) {
-                        $targetGoics[] = $toMeta['goic_uri'];
-                    }
-                } else {
-                    $targetGoics = $goicByClass[$roleMeta['naarClass']] ?? [];
-                }
-
-                foreach ($targetGoics as $toGoic) {
-                    $roleTbUuid = (string) Str::uuid();
-                    $roleTbUri = 'http://vwm.voorbeeld.nl/data/tb/'.$roleTbUuid;
-                    $roleMutatieUuid = (string) Str::uuid();
-                    $roleMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.$roleMutatieUuid;
-
-                    $roleData = [
-                        'van' => $fromMeta['goic_uri'],
-                        'naar' => $toGoic,
-                    ];
-                    if (! empty($roleType)) {
-                        $roleData['rolType'] = $roleType;
-                    }
-
-                    $roleTbId = DB::table('toestands_beschrijvingen')->insertGetId([
-                        'uuid' => $roleTbUuid,
-                        'rdf_uri' => $roleTbUri,
-                        'beschrijving' => $roleMeta['rolTbClass'],
-                        'toestand_data' => null,
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-
-                    DB::table('object_mutaties')->insert([
-                        'transactie_id' => $transactieId,
-                        'sjabloon_uri' => $roleMeta['rolTbClass'],
-                        'object_uri' => $roleTbUri,
-                        'gegevens_object_in_context_id' => $fromMeta['goic_id'] ?? null,
-                        'geproduceerde_toestand_id' => $roleTbId,
-                        'datum_tijd' => now(),
-                        'data' => json_encode($roleData),
-                        'created_at' => now(),
-                        'updated_at' => now(),
-                    ]);
-
-                    $allTriples .= "<{$roleTbUri}> a <{$roleMeta['rolTbClass']}> . \n";
-                    $allTriples .= "<{$roleTbUri}> <{$roleMeta['vanProperty']}> <{$fromMeta['goic_uri']}> . \n";
-                    $allTriples .= "<{$roleTbUri}> <{$roleMeta['naarProperty']}> <{$toGoic}> . \n";
-                    if (! empty($roleType)) {
-                        $allTriples .= "<{$roleTbUri}> <{$vwm}rolType> <{$roleType}> . \n";
-                    }
-                    $allTriples .= "<{$roleTbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
-
-                    $allTriples .= "<{$roleMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
-                    $allTriples .= "<{$roleMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$fromMeta['goic_uri']}> . \n";
-                    $allTriples .= "<{$roleMutatieUri}> <{$vwm}produceert> <{$roleTbUri}> . \n";
-                    $allTriples .= "<{$roleMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
-                }
+            if ($producedMutationCount === 0 || trim($allTriples) === '') {
+                $this->rejectNoOpMutatie();
             }
 
             $sparqlUpdate = "
@@ -780,6 +643,19 @@ class MutatieController extends Controller
             }
 
             DB::commit();
+        } catch (ValidationException $e) {
+            if ($graphUpdated) {
+                $this->rollbackGraphTriples($allTriples);
+            }
+
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            return response()->json([
+                'error' => $this->validationExceptionMessage($e),
+                'errors' => $e->errors(),
+            ], 422, [], JSON_INVALID_UTF8_SUBSTITUTE);
         } catch (\Throwable $e) {
             if ($graphUpdated) {
                 $this->rollbackGraphTriples($allTriples);
@@ -933,6 +809,20 @@ class MutatieController extends Controller
             ], 422);
         }
 
+        $sourceTargetClass = $sourceMeta['target_class'] ?? null;
+        if (! is_string($sourceTargetClass) || $sourceTargetClass === '') {
+            logger()->warning('volgGoic 422: bron doelclass ontbreekt', [
+                'case_id' => (int) $targetCase->id,
+                'user_id' => $userId,
+                'bron_goic_uri' => $bronGoicUri,
+            ]);
+
+            return response()->json([
+                'error' => 'Kon geen doelclass vinden voor bron GOIC.',
+                'reason' => 'source_target_class_missing',
+            ], 422);
+        }
+
         $alreadyFollowed = $this->findExistingFollowedGoicForCase((int) $targetCase->id, $bronGoicUri);
         if ($alreadyFollowed) {
             return response()->json([
@@ -968,7 +858,7 @@ class MutatieController extends Controller
         $dpm = 'http://ontologie.politie.nl/def/dpm#';
         $now = now();
         $nowIso = $now->toAtomString();
-        $result = DB::transaction(function () use ($targetCase, $targetDossier, $transactieSoortId, $bronGoicUri, $goUri, $vwm, $dpm, $now, $nowIso, $userId) {
+        $result = DB::transaction(function () use ($targetCase, $targetDossier, $transactieSoortId, $bronGoicUri, $goUri, $sourceTargetClass, $vwm, $dpm, $now, $nowIso, $userId) {
             $transactieId = DB::table('transacties')->insertGetId([
                 'case_id' => (int) $targetCase->id,
                 'transactie_soort_id' => (int) $transactieSoortId,
@@ -1002,6 +892,7 @@ class MutatieController extends Controller
                     'actie' => 'volg_goic',
                     'bronGoic' => $bronGoicUri,
                     'goicUri' => $newGoicUri,
+                    'doelClass' => $sourceTargetClass,
                 ], JSON_UNESCAPED_SLASHES),
                 'created_at' => $now,
                 'updated_at' => $now,
@@ -1040,6 +931,7 @@ class MutatieController extends Controller
             $triples = '';
             $triples .= "<{$newGoicUri}> a <{$vwm}GegevensObjectInContext> .\n";
             $triples .= "<{$newGoicUri}> <{$vwm}beschrijftGO> <{$goUri}> .\n";
+            $triples .= "<{$newGoicUri}> <{$vwm}heeftDoelClass> <{$sourceTargetClass}> .\n";
             $triples .= "<{$newGoicUri}> <{$vwm}hoortBijDossier> <{$targetDossier->rdf_uri}> .\n";
 
             $triples .= "<{$associationUri}> a <{$dpm}DataObjectAssociation> .\n";
@@ -1067,6 +959,7 @@ class MutatieController extends Controller
                 'goic_id' => $goicId,
                 'goic_uri' => $newGoicUri,
                 'association_uri' => $associationUri,
+                'target_class' => $sourceTargetClass,
             ];
         });
 
@@ -1075,6 +968,7 @@ class MutatieController extends Controller
             'goic_id' => $result['goic_id'],
             'goic_uri' => $result['goic_uri'],
             'association_uri' => $result['association_uri'],
+            'target_class' => $result['target_class'],
         ]);
     }
 
@@ -1169,9 +1063,12 @@ class MutatieController extends Controller
 
         $query = "
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            SELECT ?go
+            SELECT ?go ?targetClass
             WHERE {
-                <{$goicUri}> vwm:beschrijftGO ?go .
+                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                    <{$goicUri}> vwm:beschrijftGO ?go .
+                    OPTIONAL { <{$goicUri}> vwm:heeftDoelClass ?targetClass . }
+                }
             }
             LIMIT 1
         ";
@@ -1182,6 +1079,7 @@ class MutatieController extends Controller
 
         return [
             'go_uri' => $rows[0]['go'] ?? null,
+            'target_class' => $rows[0]['targetClass'] ?? null,
         ];
     }
 
@@ -1905,37 +1803,6 @@ class MutatieController extends Controller
         return $tbClass.'|'.$property.'|'.$normalizer.'|'.$normalizedValue;
     }
 
-    private function extractLegacyRoleEndpoints(array $role): array
-    {
-        $fromId = isset($role['fromId']) && is_string($role['fromId']) && $role['fromId'] !== ''
-            ? $role['fromId']
-            : null;
-        $toId = isset($role['toId']) && is_string($role['toId']) && $role['toId'] !== ''
-            ? $role['toId']
-            : null;
-
-        $idValues = [];
-        foreach ($role as $key => $value) {
-            if (! is_string($key) || ! str_ends_with($key, 'Id')) {
-                continue;
-            }
-            if (! is_string($value) || $value === '') {
-                continue;
-            }
-            $idValues[] = $value;
-        }
-
-        if ($fromId === null && ! empty($idValues)) {
-            $fromId = $idValues[0] ?? null;
-        }
-
-        if ($toId === null && count($idValues) > 1) {
-            $toId = $idValues[1] ?? null;
-        }
-
-        return [$fromId, $toId];
-    }
-
     /**
      * Voegt automatische role-items toe op basis van regels uit de ontologie/shapes.
      */
@@ -2042,6 +1909,25 @@ class MutatieController extends Controller
             (string) ($roleItem['toId'] ?? ''),
             (string) ($roleItem['toGoicId'] ?? ''),
             (string) ($roleItem['toUri'] ?? ''),
+        ]);
+    }
+
+    private function validationExceptionMessage(ValidationException $exception): string
+    {
+        foreach ($exception->errors() as $messages) {
+            $first = $messages[0] ?? null;
+            if (is_string($first) && $first !== '') {
+                return $first;
+            }
+        }
+
+        return 'Rol kan niet worden verwerkt.';
+    }
+
+    private function rejectNoOpMutatie(): never
+    {
+        throw ValidationException::withMessages([
+            'mutatie' => ['Mutatie heeft geen inhoud opgeleverd.'],
         ]);
     }
 

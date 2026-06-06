@@ -82,7 +82,7 @@ class MutationTargetResolver
 
         $goics = DB::table('gegevens_objecten_in_context')
             ->whereIn('dossier_id', $dossierIds)
-            ->get(['id'])
+            ->get(['id', 'rdf_uri'])
             ->all();
 
         if (empty($goics)) {
@@ -90,10 +90,23 @@ class MutationTargetResolver
         }
 
         $goicIds = array_map(fn ($row) => (int) $row->id, $goics);
+        $goicUrisById = [];
+        foreach ($goics as $goic) {
+            if (is_string($goic->rdf_uri) && $goic->rdf_uri !== '') {
+                $goicUrisById[(int) $goic->id] = $goic->rdf_uri;
+            }
+        }
+
+        $map = $this->fetchExplicitGoicTargetClassMap($goicUrisById);
+        $fallbackGoicIds = array_values(array_diff($goicIds, array_keys($map)));
+
+        if (empty($fallbackGoicIds)) {
+            return $map;
+        }
 
         $tbRows = DB::table('object_mutaties')
             ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-            ->whereIn('object_mutaties.gegevens_object_in_context_id', $goicIds)
+            ->whereIn('object_mutaties.gegevens_object_in_context_id', $fallbackGoicIds)
             ->orderBy('object_mutaties.created_at')
             ->orderBy('object_mutaties.id')
             ->get([
@@ -111,25 +124,101 @@ class MutationTargetResolver
         }
 
         if (empty($tbClassesInUse)) {
-            return [];
+            return $map;
         }
 
         $describedByTb = $this->metadataService->fetchDescribedClassByTbClasses(array_keys($tbClassesInUse));
-        $map = [];
+        $classHierarchy = $this->metadataService->fetchSubclassClosureMap();
 
-        foreach ($goicIds as $goicId) {
+        foreach ($fallbackGoicIds as $goicId) {
             $tbHistory = $tbHistoryByGoic[$goicId] ?? [];
-            for ($index = count($tbHistory) - 1; $index >= 0; $index--) {
-                $tbClass = $tbHistory[$index];
-                $candidateTargetClass = $describedByTb[$tbClass] ?? null;
-                if (is_string($candidateTargetClass) && $candidateTargetClass !== '') {
-                    $map[$goicId] = $candidateTargetClass;
-                    break;
-                }
+            $targetClass = $this->resolveMostSpecificTargetClassFromTbHistory($tbHistory, $describedByTb, $classHierarchy);
+            if ($targetClass !== null) {
+                $map[$goicId] = $targetClass;
             }
         }
 
         return $map;
+    }
+
+    /**
+     * @param  array<int,string>  $goicUrisById
+     * @return array<int,string>
+     */
+    public function fetchExplicitGoicTargetClassMap(array $goicUrisById): array
+    {
+        $goicUrisById = array_filter(
+            $goicUrisById,
+            fn ($uri, $id): bool => is_int($id) && $id > 0 && is_string($uri) && $uri !== '',
+            ARRAY_FILTER_USE_BOTH
+        );
+
+        if (empty($goicUrisById)) {
+            return [];
+        }
+
+        $iriList = implode(' ', array_map(fn (string $uri): string => "<{$uri}>", array_values(array_unique($goicUrisById))));
+        $query = "
+            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            SELECT ?goic ?targetClass
+            WHERE {
+                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
+                    VALUES ?goic { {$iriList} }
+                    ?goic vwm:heeftDoelClass ?targetClass .
+                }
+            }
+        ";
+
+        try {
+            $rows = $this->graphService->query($query);
+        } catch (Throwable $e) {
+            $this->logWarning('Kon expliciete GOIC doelclass niet uit GraphDB lezen', [
+                'message' => $e->getMessage(),
+            ]);
+
+            return [];
+        }
+
+        $idsByUri = array_flip($goicUrisById);
+        $map = [];
+        foreach ($rows as $row) {
+            $goicUri = $row['goic'] ?? null;
+            $targetClass = $row['targetClass'] ?? null;
+            if (! is_string($goicUri) || $goicUri === '' || ! is_string($targetClass) || $targetClass === '') {
+                continue;
+            }
+
+            $goicId = $idsByUri[$goicUri] ?? null;
+            if (is_int($goicId) && $goicId > 0) {
+                $map[$goicId] = $targetClass;
+            }
+        }
+
+        return $map;
+    }
+
+    public function resolveMostSpecificTargetClassFromTbHistory(array $tbHistory, array $describedByTb, array $classHierarchy): ?string
+    {
+        $targetClass = null;
+
+        foreach ($tbHistory as $tbClass) {
+            $candidateTargetClass = is_string($tbClass) ? ($describedByTb[$tbClass] ?? null) : null;
+            if (! is_string($candidateTargetClass) || $candidateTargetClass === '') {
+                continue;
+            }
+
+            if ($targetClass === null) {
+                $targetClass = $candidateTargetClass;
+
+                continue;
+            }
+
+            if ($this->isClassAssignable($targetClass, $candidateTargetClass, $classHierarchy)) {
+                $targetClass = $candidateTargetClass;
+            }
+        }
+
+        return $targetClass;
     }
 
     public function isClassAssignable(string $expectedClass, string $actualClass, array $classHierarchy): bool
@@ -204,7 +293,7 @@ class MutationTargetResolver
         try {
             $rows = $this->graphService->query($query);
         } catch (Throwable $e) {
-            logger()->warning('Kon actieve TB-rows voor beschrijving-resolutie niet uit GraphDB lezen', [
+            $this->logWarning('Kon actieve TB-rows voor beschrijving-resolutie niet uit GraphDB lezen', [
                 'message' => $e->getMessage(),
             ]);
 
@@ -225,5 +314,14 @@ class MutationTargetResolver
         }
 
         return $result;
+    }
+
+    private function logWarning(string $message, array $context = []): void
+    {
+        try {
+            logger()->warning($message, $context);
+        } catch (Throwable) {
+            // Pure unit tests may run without Laravel's log binding.
+        }
     }
 }
