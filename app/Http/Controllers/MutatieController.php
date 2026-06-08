@@ -6,6 +6,7 @@ use App\Http\Requests\StoreMutatieRequest;
 use App\Services\GraphService;
 use App\Services\MutationTargetResolver;
 use App\Services\RoleMutationService;
+use App\Services\RoleMutationWriter;
 use App\Services\SjabloonMetadataService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -22,12 +23,15 @@ class MutatieController extends Controller
 
     protected RoleMutationService $roleMutationService;
 
-    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService, MutationTargetResolver $mutationTargetResolver, RoleMutationService $roleMutationService)
+    protected RoleMutationWriter $roleMutationWriter;
+
+    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService, MutationTargetResolver $mutationTargetResolver, RoleMutationService $roleMutationService, RoleMutationWriter $roleMutationWriter)
     {
         $this->graphService = $graphService;
         $this->metadataService = $metadataService;
         $this->mutationTargetResolver = $mutationTargetResolver;
         $this->roleMutationService = $roleMutationService;
+        $this->roleMutationWriter = $roleMutationWriter;
     }
 
     /**
@@ -302,7 +306,8 @@ class MutatieController extends Controller
         $objectUris = [];
         $objectMeta = [];
         $allTriples = '';
-        $nowIso = now()->toAtomString();
+        $now = now();
+        $nowIso = $now->toAtomString();
         $vwm = 'http://ontologie.politie.nl/def/vwm#';
         $graphUpdated = false;
         $identityRulesByTbClass = $this->metadataService->fetchIdentityRulesByTbClasses($tbClasses);
@@ -559,54 +564,14 @@ class MutatieController extends Controller
                 $goicByClass
             );
 
-            foreach ($roleMutationPlans as $rolePlan) {
-                $roleTbUuid = (string) Str::uuid();
-                $roleTbUri = 'http://vwm.voorbeeld.nl/data/tb/'.$roleTbUuid;
-                $roleMutatieUuid = (string) Str::uuid();
-                $roleMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.$roleMutatieUuid;
-
-                $roleData = [
-                    'van' => $rolePlan['from_goic_uri'],
-                    'naar' => $rolePlan['to_goic_uri'],
-                ];
-                if (! empty($rolePlan['role_type'])) {
-                    $roleData['rolType'] = $rolePlan['role_type'];
-                }
-
-                $roleTbId = DB::table('toestands_beschrijvingen')->insertGetId([
-                    'uuid' => $roleTbUuid,
-                    'rdf_uri' => $roleTbUri,
-                    'beschrijving' => $rolePlan['role_tb_class'],
-                    'toestand_data' => null,
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                DB::table('object_mutaties')->insert([
-                    'transactie_id' => $transactieId,
-                    'sjabloon_uri' => $rolePlan['role_tb_class'],
-                    'object_uri' => $roleTbUri,
-                    'gegevens_object_in_context_id' => $rolePlan['from_goic_id'],
-                    'geproduceerde_toestand_id' => $roleTbId,
-                    'datum_tijd' => now(),
-                    'data' => json_encode($roleData),
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-
-                $allTriples .= "<{$roleTbUri}> a <{$rolePlan['role_tb_class']}> . \n";
-                $allTriples .= "<{$roleTbUri}> <{$rolePlan['van_property']}> <{$rolePlan['from_goic_uri']}> . \n";
-                $allTriples .= "<{$roleTbUri}> <{$rolePlan['naar_property']}> <{$rolePlan['to_goic_uri']}> . \n";
-                if (! empty($rolePlan['role_type'])) {
-                    $allTriples .= "<{$roleTbUri}> <{$vwm}rolType> <{$rolePlan['role_type']}> . \n";
-                }
-                $allTriples .= "<{$roleTbUri}> <{$vwm}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
-
-                $allTriples .= "<{$roleMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
-                $allTriples .= "<{$roleMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$rolePlan['from_goic_uri']}> . \n";
-                $allTriples .= "<{$roleMutatieUri}> <{$vwm}produceert> <{$roleTbUri}> . \n";
-                $allTriples .= "<{$roleMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
-            }
+            $roleWriteResult = $this->roleMutationWriter->writeRoleMutations(
+                $transactieId,
+                $roleMutationPlans,
+                $now,
+                $nowIso,
+                $vwm
+            );
+            $allTriples .= $roleWriteResult['triples'];
 
             $producedMutationCount = DB::table('object_mutaties')
                 ->where('transactie_id', $transactieId)

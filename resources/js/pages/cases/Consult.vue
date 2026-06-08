@@ -384,6 +384,10 @@ const visibleGoics = (dossier: DossierItem) => {
   );
 };
 
+const dossiersWithVisibleGoics = () => {
+  return (props.dossiers ?? []).filter((dossier) => visibleGoics(dossier).length > 0);
+};
+
 const visibleFollowSourceEntries = (goic: GoicItem): [string, unknown][] => {
   const state = goic.follow_info?.source_state;
 
@@ -973,8 +977,8 @@ watch(() => props.dossiers, () => {
             Actieve case: {{ activeCase.case_soort_naam }} ({{ activeCase.case_soort_code }}) · #{{ activeCase.id }}
           </div>
 
-          <div v-if="dossiers && dossiers.length" class="space-y-4">
-            <div v-for="dossier in dossiers" :key="dossier.id" class="rounded-xl border border-gray-200 p-5 dark:border-gray-700">
+          <div v-if="dossiersWithVisibleGoics().length" class="space-y-4">
+            <div v-for="dossier in dossiersWithVisibleGoics()" :key="dossier.id" class="rounded-xl border border-gray-200 p-5 dark:border-gray-700">
               <div class="flex flex-col gap-1">
                 <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ dossierTitle(dossier) }}</h3>
               </div>
@@ -1081,7 +1085,7 @@ watch(() => props.dossiers, () => {
             </div>
           </div>
           <div v-else class="rounded-xl border border-dashed border-gray-300 p-6 text-center text-sm text-gray-600 dark:border-gray-700 dark:text-gray-300">
-            Geen dossiers gevonden voor deze case.
+            Geen inhoud gevonden voor deze case.
           </div>
         </div>
       </div>
