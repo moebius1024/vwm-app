@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMutatieRequest;
+use App\Services\AutoRoleMutationService;
 use App\Services\GraphService;
 use App\Services\MutationTargetResolver;
 use App\Services\RoleMutationService;
@@ -25,13 +26,22 @@ class MutatieController extends Controller
 
     protected RoleMutationWriter $roleMutationWriter;
 
-    public function __construct(GraphService $graphService, SjabloonMetadataService $metadataService, MutationTargetResolver $mutationTargetResolver, RoleMutationService $roleMutationService, RoleMutationWriter $roleMutationWriter)
-    {
+    protected AutoRoleMutationService $autoRoleMutationService;
+
+    public function __construct(
+        GraphService $graphService,
+        SjabloonMetadataService $metadataService,
+        MutationTargetResolver $mutationTargetResolver,
+        RoleMutationService $roleMutationService,
+        RoleMutationWriter $roleMutationWriter,
+        AutoRoleMutationService $autoRoleMutationService,
+    ) {
         $this->graphService = $graphService;
         $this->metadataService = $metadataService;
         $this->mutationTargetResolver = $mutationTargetResolver;
         $this->roleMutationService = $roleMutationService;
         $this->roleMutationWriter = $roleMutationWriter;
+        $this->autoRoleMutationService = $autoRoleMutationService;
     }
 
     /**
@@ -533,7 +543,7 @@ class MutatieController extends Controller
 
             $clientMap = $this->roleMutationService->buildClientMap($objectMeta);
 
-            $roleItems = $this->appendAutoRoleItems(
+            $roleItems = $this->autoRoleMutationService->appendAutoRoleItems(
                 $roleItems,
                 $objects,
                 $objectMeta,
@@ -1587,36 +1597,17 @@ class MutatieController extends Controller
                     return ($row['tb_uri'] ?? '') !== (string) $targetRow->tb_uri;
                 }));
 
-                $invalidationRules = $this->metadataService->fetchAutoRoleInvalidationRules();
-                $extraRoleUris = [];
-                foreach ($invalidationRules as $rule) {
-                    $triggerTbClass = (string) ($rule['triggerTbClass'] ?? '');
-                    $rolType = (string) ($rule['rolType'] ?? '');
-                    if ($triggerTbClass === '' || $rolType === '' || $triggerTbClass !== (string) ($targetRow->tb_class ?? '')) {
-                        continue;
-                    }
-
-                    $shapeRule = $roleShapeRules[$rolType] ?? null;
-                    if (! is_array($shapeRule)) {
-                        continue;
-                    }
-
-                    $roleTbClass = (string) ($shapeRule['rolTbClass'] ?? '');
-                    $fromProperty = (string) ($shapeRule['vanProperty'] ?? '');
-                    if ($roleTbClass === '' || $fromProperty === '') {
-                        continue;
-                    }
-
-                    $uris = $this->fetchActiveRoleTbUrisByRoleTypeAndSourceGoic(
-                        (string) $targetRow->goic_uri,
+                $extraRoleUris = $this->autoRoleMutationService->collectRuleBasedInvalidationUris(
+                    (string) ($targetRow->tb_class ?? ''),
+                    (string) $targetRow->goic_uri,
+                    $roleShapeRules,
+                    fn (string $sourceGoicUri, string $roleTbClass, string $rolType, string $fromProperty): array => $this->fetchActiveRoleTbUrisByRoleTypeAndSourceGoic(
+                        $sourceGoicUri,
                         $roleTbClass,
                         $rolType,
                         $fromProperty
-                    );
-                    foreach ($uris as $uri) {
-                        $extraRoleUris[$uri] = $roleTbClass;
-                    }
-                }
+                    )
+                );
 
                 if (! empty($extraRoleUris)) {
                     $tbIdByUri = $this->fetchTbIdsByUris(array_keys($extraRoleUris));
@@ -1629,50 +1620,25 @@ class MutatieController extends Controller
                     }
                 }
 
-                $remainingKernel = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules, $activeTbCapabilities) {
-                    $tbClass = (string) ($row['tb_class'] ?? '');
-                    if ($tbClass === '') {
-                        return false;
-                    }
-                    if ($this->roleMutationService->isRoleTbClass($tbClass, $roleShapeRules)) {
-                        return false;
-                    }
-                    if ($this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection')) {
-                        return false;
-                    }
-                    if (str_contains(strtolower($tbClass), 'dataobjectassociation')) {
-                        return false;
-                    }
+                $cascadeRows = $this->autoRoleMutationService->collectCascadeRowsWhenNoKernelRemains(
+                    $remainingAfterDelete,
+                    $roleShapeRules,
+                    $activeTbCapabilities
+                );
 
-                    return $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_signalement')
-                        || $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_beschrijving');
-                }));
-
-                if (count($remainingKernel) === 0) {
-                    $cascadeRows = array_values(array_filter($remainingAfterDelete, function (array $row) use ($roleShapeRules, $activeTbCapabilities) {
-                        $tbClass = (string) ($row['tb_class'] ?? '');
-                        if ($tbClass === '') {
-                            return false;
+                if (! empty($cascadeRows)) {
+                    $tbUris = array_values(array_unique(array_map(fn ($row) => (string) ($row['tb_uri'] ?? ''), $cascadeRows)));
+                    $tbIdByUri = $this->fetchTbIdsByUris($tbUris);
+                    foreach ($cascadeRows as $row) {
+                        $uri = (string) ($row['tb_uri'] ?? '');
+                        if ($uri === '') {
+                            continue;
                         }
-
-                        return $this->roleMutationService->isRoleTbClass($tbClass, $roleShapeRules)
-                            || $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $activeTbCapabilities, 'is_state_projection');
-                    }));
-
-                    if (! empty($cascadeRows)) {
-                        $tbUris = array_values(array_unique(array_map(fn ($row) => (string) ($row['tb_uri'] ?? ''), $cascadeRows)));
-                        $tbIdByUri = $this->fetchTbIdsByUris($tbUris);
-                        foreach ($cascadeRows as $row) {
-                            $uri = (string) ($row['tb_uri'] ?? '');
-                            if ($uri === '') {
-                                continue;
-                            }
-                            $toInvalidate[] = [
-                                'tb_uri' => $uri,
-                                'tb_class' => (string) ($row['tb_class'] ?? ''),
-                                'tb_id' => $tbIdByUri[$uri] ?? null,
-                            ];
-                        }
+                        $toInvalidate[] = [
+                            'tb_uri' => $uri,
+                            'tb_class' => (string) ($row['tb_class'] ?? ''),
+                            'tb_id' => $tbIdByUri[$uri] ?? null,
+                        ];
                     }
                 }
             }
@@ -1755,115 +1721,6 @@ class MutatieController extends Controller
     private function buildIdentityCacheKey(string $tbClass, string $property, string $normalizer, string $normalizedValue): string
     {
         return $tbClass.'|'.$property.'|'.$normalizer.'|'.$normalizedValue;
-    }
-
-    /**
-     * Voegt automatische role-items toe op basis van regels uit de ontologie/shapes.
-     */
-    private function appendAutoRoleItems(
-        array $roleItems,
-        array $objects,
-        array $objectMeta,
-        array $goicByClass,
-        array $roleShapeRules
-    ): array {
-        $autoRoleRules = $this->metadataService->fetchAutoRoleRules();
-        if (count($autoRoleRules) === 0) {
-            return $roleItems;
-        }
-
-        $objectMetaByClientId = [];
-        foreach ($objectMeta as $meta) {
-            $clientId = $meta['client_id'] ?? null;
-            if (is_string($clientId) && $clientId !== '') {
-                $objectMetaByClientId[$clientId] = $meta;
-            }
-        }
-
-        $newRoleItems = [];
-        foreach ($objects as $object) {
-            $tbClass = (string) ($object['sjabloon_uri'] ?? '');
-            $clientId = (string) ($object['client_id'] ?? '');
-            if ($clientId === '' || empty($objectMetaByClientId[$clientId])) {
-                continue;
-            }
-
-            $fromMeta = $objectMetaByClientId[$clientId];
-            $fromGoicId = isset($fromMeta['goic_id']) ? (int) $fromMeta['goic_id'] : 0;
-            $fromClass = (string) ($fromMeta['target_class'] ?? '');
-            if ($fromGoicId <= 0 || $fromClass === '') {
-                continue;
-            }
-
-            foreach ($autoRoleRules as $rule) {
-                $triggerTbClass = (string) ($rule['triggerTbClass'] ?? '');
-                $rolType = (string) ($rule['rolType'] ?? '');
-                if ($triggerTbClass === '' || $rolType === '' || $triggerTbClass !== $tbClass) {
-                    continue;
-                }
-
-                $shapeRule = $roleShapeRules[$rolType] ?? null;
-                if (! is_array($shapeRule)) {
-                    continue;
-                }
-
-                $expectedFromClass = (string) ($shapeRule['vanClass'] ?? '');
-                $targetClass = (string) ($shapeRule['naarClass'] ?? '');
-                if ($expectedFromClass === '' || $targetClass === '' || $expectedFromClass !== $fromClass) {
-                    continue;
-                }
-
-                $targetGoics = array_values(array_filter($goicByClass[$targetClass] ?? []));
-                if (count($targetGoics) === 0) {
-                    continue;
-                }
-
-                $newRoleItems[] = [
-                    'roleType' => $rolType,
-                    'fromGoicId' => $fromGoicId,
-                    'toId' => null,
-                    'toGoicId' => null,
-                    'toUri' => $targetGoics[0],
-                    'isAuto' => true,
-                ];
-            }
-        }
-
-        if (count($newRoleItems) === 0) {
-            return $roleItems;
-        }
-
-        $existingKeys = [];
-        foreach ($roleItems as $item) {
-            if (! is_array($item)) {
-                continue;
-            }
-            $existingKeys[$this->roleItemSignature($item)] = true;
-        }
-
-        foreach ($newRoleItems as $item) {
-            $signature = $this->roleItemSignature($item);
-            if (isset($existingKeys[$signature])) {
-                continue;
-            }
-            $roleItems[] = $item;
-            $existingKeys[$signature] = true;
-        }
-
-        return $roleItems;
-    }
-
-    private function roleItemSignature(array $roleItem): string
-    {
-        return implode('|', [
-            (string) ($roleItem['roleType'] ?? ''),
-            (string) ($roleItem['roleTbClass'] ?? ''),
-            (string) ($roleItem['fromId'] ?? ''),
-            (string) ($roleItem['fromGoicId'] ?? ''),
-            (string) ($roleItem['toId'] ?? ''),
-            (string) ($roleItem['toGoicId'] ?? ''),
-            (string) ($roleItem['toUri'] ?? ''),
-        ]);
     }
 
     private function validationExceptionMessage(ValidationException $exception): string
