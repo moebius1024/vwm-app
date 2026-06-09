@@ -86,7 +86,6 @@ test('it rejects explicit role items instead of silently creating an empty trans
 
     $metadataService = Mockery::mock(SjabloonMetadataService::class);
     $metadataService->shouldReceive('fetchRoleShapeRules')->andReturn([$roleType => $roleRule]);
-    $metadataService->shouldReceive('fetchRelatieRegels')->andReturn([]);
     $metadataService->shouldReceive('fetchRolTypesByKey')->andReturn([]);
     $metadataService->shouldReceive('fetchDescribedClassByTbClasses')->with([])->andReturn([]);
     $metadataService->shouldReceive('fetchTbClassCapabilitiesByTbClasses')->with([])->andReturn([]);
@@ -215,7 +214,6 @@ test('it rejects no-op mutations instead of committing an empty transaction', fu
 
     $metadataService = Mockery::mock(SjabloonMetadataService::class);
     $metadataService->shouldReceive('fetchRoleShapeRules')->andReturn([$roleType => $roleRule]);
-    $metadataService->shouldReceive('fetchRelatieRegels')->andReturn([]);
     $metadataService->shouldReceive('fetchRolTypesByKey')->andReturn([]);
     $metadataService->shouldReceive('fetchDescribedClassByTbClasses')->with([])->andReturn([]);
     $metadataService->shouldReceive('fetchTbClassCapabilitiesByTbClasses')->with([])->andReturn([]);

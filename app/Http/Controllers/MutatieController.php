@@ -70,7 +70,6 @@ class MutatieController extends Controller
             return $this->deleteToestandMutatie($request, $base, (int) $dossier->id, $userId, $roleShapeRules);
         }
 
-        $relatieRegels = $this->metadataService->fetchRelatieRegels();
         $rolTypesByKey = $this->metadataService->fetchRolTypesByKey();
         $allowedRoleConfiguration = $this->roleMutationService->fetchAllowedRoleConfiguration((int) $base['transactie_soort_id']);
         $allowedRoleSelectors = $allowedRoleConfiguration['allowed_selectors'];
@@ -523,16 +522,6 @@ class MutatieController extends Controller
                 ];
                 if ($targetClass) {
                     $goicByClass[$targetClass][] = $goic->rdf_uri;
-                }
-            }
-
-            foreach ($relatieRegels as $regel) {
-                $froms = $goicByClass[$regel['vanClass']] ?? [];
-                $tos = $goicByClass[$regel['naarClass']] ?? [];
-                foreach ($froms as $from) {
-                    foreach ($tos as $to) {
-                        $allTriples .= "<{$from}> <{$regel['predicate']}> <{$to}> . \n";
-                    }
                 }
             }
 
