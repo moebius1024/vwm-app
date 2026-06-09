@@ -61,12 +61,12 @@ class CaseController extends Controller
         }
 
         $cases = $casesQuery->get([
-                'cases.id',
-                'cases.uuid',
-                'cases.created_at',
-                'case_soorten.naam as case_soort_naam',
-                'case_soorten.code as case_soort_code',
-            ]);
+            'cases.id',
+            'cases.uuid',
+            'cases.created_at',
+            'case_soorten.naam as case_soort_naam',
+            'case_soorten.code as case_soort_code',
+        ]);
 
         return Inertia::render('cases/Start', [
             'caseSoorten' => $caseSoorten,
@@ -98,12 +98,15 @@ class CaseController extends Controller
 
         $caseId = DB::transaction(function () use ($validated, $request) {
             $caseSoort = DB::table('case_soorten')
-                ->select('naam', 'code')
+                ->select('naam', 'vereist_incident_in_dossier')
                 ->where('id', $validated['case_soort_id'])
                 ->first();
 
+            $caseUuid = (string) Str::uuid();
+            $requiresIncidentInDossier = (bool) ($caseSoort?->vereist_incident_in_dossier ?? false);
+
             $caseId = DB::table('cases')->insertGetId([
-                'uuid' => (string) Str::uuid(),
+                'uuid' => $caseUuid,
                 'case_soort_id' => $validated['case_soort_id'],
                 'user_id' => $request->user()->id,
                 'created_at' => now(),
@@ -119,6 +122,7 @@ class CaseController extends Controller
                 'case_id' => $caseId,
                 'parent_id' => null,
                 'naam' => $caseSoort?->naam ? "Dossier {$caseSoort->naam}" : 'Dossier',
+                'vereist_incident_in_dossier' => $requiresIncidentInDossier,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -127,7 +131,7 @@ class CaseController extends Controller
                 INSERT DATA {
                     GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
                         <{$dossierUri}> a <http://ontologie.politie.nl/def/vwm#Dossier> .
-                        {$this->buildAdditionalDossierTypeTriples((int) $validated['case_soort_id'], $dossierUri)}
+                        {$this->buildIncidentRequirementTriple($dossierUri, $requiresIncidentInDossier)}
                     }
                 }
             ";
@@ -197,6 +201,7 @@ class CaseController extends Controller
                 'case_id' => (int) $caseRow->id,
                 'parent_id' => $parentId,
                 'naam' => $naam,
+                'vereist_incident_in_dossier' => false,
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
@@ -205,7 +210,6 @@ class CaseController extends Controller
                 INSERT DATA {
                     GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
                         <{$dossierUri}> a <http://ontologie.politie.nl/def/vwm#Dossier> .
-                        {$this->buildAdditionalDossierTypeTriples((int) $caseRow->case_soort_id, $dossierUri)}
                     }
                 }
             ";
@@ -460,27 +464,13 @@ class CaseController extends Controller
         return ! empty($ids) ? $ids : [-1];
     }
 
-    private function buildAdditionalDossierTypeTriples(int $caseSoortId, string $dossierUri): string
+    private function buildIncidentRequirementTriple(string $dossierUri, bool $requiresIncidentInDossier): string
     {
-        $types = DB::table('case_soort_dossier_types')
-            ->where('case_soort_id', $caseSoortId)
-            ->orderBy('volgorde')
-            ->orderBy('id')
-            ->pluck('rdf_type_uri')
-            ->filter(fn ($uri) => is_string($uri) && $uri !== '' && $uri !== 'http://ontologie.politie.nl/def/vwm#Dossier')
-            ->values()
-            ->all();
-
-        if (empty($types)) {
+        if (! $requiresIncidentInDossier) {
             return '';
         }
 
-        $triples = [];
-        foreach ($types as $typeUri) {
-            $triples[] = "<{$dossierUri}> a <{$typeUri}> .";
-        }
-
-        return implode("\n", $triples);
+        return "<{$dossierUri}> <http://ontologie.politie.nl/def/vwm#vereistIncidentInDossier> true .";
     }
 
     private function buildDossiersOut(int $caseId, int $userId, array $allowedRechtsgrondIds): array
@@ -798,6 +788,7 @@ class CaseController extends Controller
                 $bAudit = is_string($bTb) ? ($auditByTbUri[$bTb] ?? null) : null;
                 $aCreated = (string) (is_array($aAudit) ? ($aAudit['created_at'] ?? '') : '');
                 $bCreated = (string) (is_array($bAudit) ? ($bAudit['created_at'] ?? '') : '');
+
                 return $bCreated <=> $aCreated;
             });
 
@@ -877,6 +868,7 @@ class CaseController extends Controller
                 logger()->warning('Kon actieve toestanden niet uit GraphDB lezen', [
                     'message' => $e->getMessage(),
                 ]);
+
                 continue;
             }
 
