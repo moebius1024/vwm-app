@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMutatieRequest;
+use App\Services\GoicFollowService;
 use App\Services\GraphService;
 use App\Services\MutationTargetResolver;
 use App\Services\ObjectMutationCommitService;
@@ -11,7 +12,6 @@ use App\Services\SjabloonMetadataService;
 use App\Services\StateDeletionService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Str;
 
 class MutatieController extends Controller
 {
@@ -27,11 +27,14 @@ class MutatieController extends Controller
 
     protected ObjectMutationCommitService $objectMutationCommitService;
 
+    protected GoicFollowService $goicFollowService;
+
     public function __construct(
         GraphService $graphService,
         SjabloonMetadataService $metadataService,
         MutationTargetResolver $mutationTargetResolver,
         ObjectMutationCommitService $objectMutationCommitService,
+        GoicFollowService $goicFollowService,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
     ) {
@@ -39,6 +42,7 @@ class MutatieController extends Controller
         $this->metadataService = $metadataService;
         $this->mutationTargetResolver = $mutationTargetResolver;
         $this->objectMutationCommitService = $objectMutationCommitService;
+        $this->goicFollowService = $goicFollowService;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
     }
@@ -423,7 +427,7 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $sourceMeta = $this->fetchSourceGoicMeta($bronGoicUri);
+        $sourceMeta = $this->goicFollowService->fetchSourceGoicMeta($bronGoicUri);
         if (! $sourceMeta) {
             logger()->warning('volgGoic 422: source meta niet gevonden', [
                 'case_id' => (int) $targetCase->id,
@@ -465,7 +469,7 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $alreadyFollowed = $this->findExistingFollowedGoicForCase((int) $targetCase->id, $bronGoicUri);
+        $alreadyFollowed = $this->goicFollowService->findExistingFollowedGoicForCase((int) $targetCase->id, $bronGoicUri);
         if ($alreadyFollowed) {
             return response()->json([
                 'message' => 'Deze case volgt deze GOIC al.',
@@ -496,114 +500,15 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $vwm = 'http://ontologie.politie.nl/def/vwm#';
-        $dpm = 'http://ontologie.politie.nl/def/dpm#';
-        $now = now();
-        $nowIso = $now->toAtomString();
-        $result = DB::transaction(function () use ($targetCase, $targetDossier, $transactieSoortId, $bronGoicUri, $goUri, $sourceTargetClass, $vwm, $dpm, $now, $nowIso, $userId) {
-            $transactieId = DB::table('transacties')->insertGetId([
-                'case_id' => (int) $targetCase->id,
-                'transactie_soort_id' => (int) $transactieSoortId,
-                'user_id' => $userId,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-
-            $newGoicUuid = (string) Str::uuid();
-            $newGoicUri = "http://vwm.voorbeeld.nl/data/goic/{$newGoicUuid}";
-            $associationUri = 'http://vwm.voorbeeld.nl/data/association/'.((string) Str::uuid());
-
-            $goicId = DB::table('gegevens_objecten_in_context')->insertGetId([
-                'uuid' => $newGoicUuid,
-                'rdf_uri' => $newGoicUri,
-                'dossier_id' => (int) $targetDossier->id,
-                'context_data' => null,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-
-            // Stap 1: nieuwe GOIC mutatie in SQLite.
-            DB::table('object_mutaties')->insert([
-                'transactie_id' => $transactieId,
-                'sjabloon_uri' => "{$vwm}GegevensObjectInContext",
-                'object_uri' => $newGoicUri,
-                'gegevens_object_in_context_id' => $goicId,
-                'geproduceerde_toestand_id' => null,
-                'datum_tijd' => $now,
-                'data' => json_encode([
-                    'actie' => 'volg_goic',
-                    'bronGoic' => $bronGoicUri,
-                    'goicUri' => $newGoicUri,
-                    'doelClass' => $sourceTargetClass,
-                ], JSON_UNESCAPED_SLASHES),
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-
-            // Stap 3: DataObjectAssociation mutatie in SQLite.
-            $associationMutatieId = DB::table('object_mutaties')->insertGetId([
-                'transactie_id' => $transactieId,
-                'sjabloon_uri' => "{$dpm}DataObjectAssociation",
-                'object_uri' => $associationUri,
-                'gegevens_object_in_context_id' => $goicId,
-                'geproduceerde_toestand_id' => null,
-                'datum_tijd' => $now,
-                'data' => json_encode([
-                    'ownedObject' => $newGoicUri,
-                    'targetObject' => $bronGoicUri,
-                    'producedAtTime' => $nowIso,
-                ], JSON_UNESCAPED_SLASHES),
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-
-            DB::table('data_object_associations')->insert([
-                'uuid' => (string) Str::uuid(),
-                'rdf_uri' => $associationUri,
-                'object_mutatie_id' => $associationMutatieId,
-                'owned_goic_uri' => $newGoicUri,
-                'target_goic_uri' => $bronGoicUri,
-                'produced_at' => $now,
-                'created_at' => $now,
-                'updated_at' => $now,
-            ]);
-
-            $mutatie1Uri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
-            $mutatie2Uri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
-            $triples = '';
-            $triples .= "<{$newGoicUri}> a <{$vwm}GegevensObjectInContext> .\n";
-            $triples .= "<{$newGoicUri}> <{$vwm}beschrijftGO> <{$goUri}> .\n";
-            $triples .= "<{$newGoicUri}> <{$vwm}heeftDoelClass> <{$sourceTargetClass}> .\n";
-            $triples .= "<{$newGoicUri}> <{$vwm}hoortBijDossier> <{$targetDossier->rdf_uri}> .\n";
-
-            $triples .= "<{$associationUri}> a <{$dpm}DataObjectAssociation> .\n";
-            $triples .= "<{$associationUri}> <{$dpm}ownedObject> <{$newGoicUri}> .\n";
-            $triples .= "<{$associationUri}> <{$dpm}targetObject> <{$bronGoicUri}> .\n";
-            $triples .= "<{$associationUri}> <{$dpm}producedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
-
-            $triples .= "<{$mutatie1Uri}> a <{$vwm}ObjectMutatie> .\n";
-            $triples .= "<{$mutatie1Uri}> <{$vwm}heeftBetrekkingOp> <{$newGoicUri}> .\n";
-            $triples .= "<{$mutatie1Uri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
-
-            $triples .= "<{$mutatie2Uri}> a <{$vwm}ObjectMutatie> .\n";
-            $triples .= "<{$mutatie2Uri}> <{$vwm}heeftBetrekkingOp> <{$newGoicUri}> .\n";
-            $triples .= "<{$mutatie2Uri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
-
-            $this->graphService->update("
-                INSERT DATA {
-                    GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
-                        {$triples}
-                    }
-                }
-            ");
-
-            return [
-                'goic_id' => $goicId,
-                'goic_uri' => $newGoicUri,
-                'association_uri' => $associationUri,
-                'target_class' => $sourceTargetClass,
-            ];
-        });
+        $result = $this->goicFollowService->follow(
+            $targetCase,
+            $targetDossier,
+            (int) $transactieSoortId,
+            $bronGoicUri,
+            $goUri,
+            $sourceTargetClass,
+            $userId
+        );
 
         return response()->json([
             'message' => 'GOIC wordt nu gevolgd vanuit deze case.',
@@ -611,6 +516,74 @@ class MutatieController extends Controller
             'goic_uri' => $result['goic_uri'],
             'association_uri' => $result['association_uri'],
             'target_class' => $result['target_class'],
+        ]);
+    }
+
+    public function ontvolgGoic(Request $request)
+    {
+        $userId = $request->user()?->id;
+        if (! is_int($userId)) {
+            return response()->json(['error' => 'Niet geauthenticeerd.'], 401);
+        }
+
+        $validated = $request->validate([
+            'case_id' => 'required|integer',
+            'association_uri' => 'required|string',
+        ]);
+
+        $targetCase = DB::table('cases')
+            ->where('id', (int) $validated['case_id'])
+            ->where('user_id', $userId)
+            ->first(['id', 'case_soort_id']);
+
+        if (! $targetCase) {
+            return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
+        }
+
+        $associationUri = trim((string) $validated['association_uri']);
+        if ($associationUri === '' || ! preg_match('/^https?:\/\/[^\s<>"\']+$/', $associationUri)) {
+            return response()->json([
+                'error' => 'Ongeldige association URI.',
+                'reason' => 'invalid_uri_format',
+            ], 422);
+        }
+
+        $transactieSoortId = DB::table('case_soort_transactie')
+            ->where('case_soort_id', (int) $targetCase->case_soort_id)
+            ->orderBy('volgorde')
+            ->value('transactie_soort_id');
+
+        if (! $transactieSoortId) {
+            $transactieSoortId = DB::table('transactie_soorten')->orderBy('id')->value('id');
+        }
+
+        if (! $transactieSoortId) {
+            return response()->json([
+                'error' => 'Geen transactie-soort beschikbaar.',
+                'reason' => 'transactie_soort_missing',
+            ], 422);
+        }
+
+        $result = $this->goicFollowService->unfollow(
+            (int) $targetCase->id,
+            (int) $transactieSoortId,
+            $associationUri,
+            $userId
+        );
+
+        if (! $result) {
+            return response()->json([
+                'error' => 'Actieve volgrelatie niet gevonden.',
+                'reason' => 'active_association_missing',
+            ], 422);
+        }
+
+        return response()->json([
+            'message' => 'Registratie wordt niet meer gevolgd.',
+            'association_uri' => $result['association_uri'],
+            'goic_id' => $result['goic_id'],
+            'goic_uri' => $result['goic_uri'],
+            'target_goic_uri' => $result['target_goic_uri'],
         ]);
     }
 
@@ -692,95 +665,6 @@ class MutatieController extends Controller
         }
 
         return response()->json(['labels' => $labels]);
-    }
-
-    private function fetchSourceGoicMeta(string $goicUri): ?array
-    {
-        $goic = DB::table('gegevens_objecten_in_context')
-            ->where('rdf_uri', $goicUri)
-            ->first(['id']);
-        if (! $goic) {
-            return null;
-        }
-
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            SELECT ?go ?targetClass
-            WHERE {
-                GRAPH <http://vwm.voorbeeld.nl/data/onderzoek> {
-                    <{$goicUri}> vwm:beschrijftGO ?go .
-                    OPTIONAL { <{$goicUri}> vwm:heeftDoelClass ?targetClass . }
-                }
-            }
-            LIMIT 1
-        ";
-        $rows = $this->graphService->query($query);
-        if (empty($rows[0]['go'])) {
-            return null;
-        }
-
-        return [
-            'go_uri' => $rows[0]['go'] ?? null,
-            'target_class' => $rows[0]['targetClass'] ?? null,
-        ];
-    }
-
-    private function findExistingFollowedGoicForCase(int $caseId, string $bronGoicUri): ?array
-    {
-        $dossierIds = DB::table('dossiers')
-            ->where('case_id', $caseId)
-            ->pluck('id')
-            ->all();
-
-        if (empty($dossierIds)) {
-            return null;
-        }
-
-        $caseGoicUris = DB::table('gegevens_objecten_in_context')
-            ->whereIn('dossier_id', $dossierIds)
-            ->pluck('rdf_uri')
-            ->all();
-
-        if (empty($caseGoicUris)) {
-            return null;
-        }
-
-        $values = implode(' ', array_map(fn ($uri) => "<{$uri}>", $caseGoicUris));
-        $query = "
-            PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
-            SELECT ?owned
-            WHERE {
-                ?assoc a dpm:DataObjectAssociation ;
-                       dpm:ownedObject ?owned ;
-                       dpm:targetObject <{$bronGoicUri}> .
-                VALUES ?owned { {$values} }
-            }
-            LIMIT 1
-        ";
-
-        try {
-            $rows = $this->graphService->query($query);
-        } catch (\Throwable) {
-            return null;
-        }
-
-        $ownedUri = $rows[0]['owned'] ?? null;
-        if (! is_string($ownedUri) || $ownedUri === '') {
-            return null;
-        }
-
-        $goic = DB::table('gegevens_objecten_in_context')
-            ->where('rdf_uri', $ownedUri)
-            ->first(['id', 'rdf_uri']);
-
-        if (! $goic) {
-            return null;
-        }
-
-        return [
-            'goic_id' => (int) $goic->id,
-            'goic_uri' => (string) $goic->rdf_uri,
-        ];
     }
 
     private function extractValueBySuffix(array $data, string $suffix): ?string

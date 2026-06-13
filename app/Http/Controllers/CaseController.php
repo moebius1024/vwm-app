@@ -498,13 +498,14 @@ class CaseController extends Controller
             ]);
 
         $visibleGoicUris = $this->fetchVisibleGoicUrisForUser($userId, $allowedRechtsgrondIds);
+        $activeVisibleGoicUris = $this->filterActiveGoicUris($visibleGoicUris);
         $goLinkMetaByUri = $this->fetchGoLinkMetaByGoicUris(
             $goics
                 ->pluck('rdf_uri')
                 ->filter(fn ($uri) => is_string($uri) && $uri !== '')
                 ->values()
                 ->all(),
-            $visibleGoicUris
+            $activeVisibleGoicUris
         );
 
         $goicMap = [];
@@ -710,6 +711,7 @@ class CaseController extends Controller
                     ?assoc a dpm:DataObjectAssociation ;
                            dpm:ownedObject ?owned ;
                            dpm:targetObject ?target .
+                    FILTER NOT EXISTS { ?assoc dpm:invalidatedAtTime ?invalidatedAtTime . }
                 }
             ";
 
@@ -1024,6 +1026,39 @@ class CaseController extends Controller
             ->filter(fn ($uri) => is_string($uri) && $uri !== '')
             ->values()
             ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $goicUris
+     * @return array<int, string>
+     */
+    private function filterActiveGoicUris(array $goicUris): array
+    {
+        $uris = array_values(array_unique(array_filter($goicUris, fn ($uri) => is_string($uri) && $uri !== '')));
+        if (empty($uris)) {
+            return [];
+        }
+
+        $active = [];
+        foreach ($this->fetchActiveToestandenByGoicUris($uris) as $goicUri => $rows) {
+            if (! empty($rows)) {
+                $active[(string) $goicUri] = true;
+            }
+        }
+
+        $activeFollowUris = DB::table('data_object_associations')
+            ->whereIn('owned_goic_uri', $uris)
+            ->whereNull('invalidated_at')
+            ->pluck('owned_goic_uri')
+            ->all();
+
+        foreach ($activeFollowUris as $uri) {
+            if (is_string($uri) && $uri !== '') {
+                $active[$uri] = true;
+            }
+        }
+
+        return array_values(array_intersect($uris, array_keys($active)));
     }
 
     private function fetchGoicUrisByGoUri(string $goUri): array

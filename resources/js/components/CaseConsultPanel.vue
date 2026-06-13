@@ -24,6 +24,7 @@ type GoicItem = {
   toestanden: ToestandItem[];
   follow_info?: {
     is_followed?: boolean;
+    association_uri?: string | null;
     source_goic_uri?: string | null;
     source_goic_id?: number | null;
     source_case_id?: number | null;
@@ -88,6 +89,7 @@ const sjabloonOrderMap = ref<Record<string, number>>({});
 const tbClassCapabilitiesMap = ref<Record<string, TbClassCapabilities>>({});
 const roleCrudMap = ref<Record<string, string>>({});
 const roleCrudByTypeMap = ref<Record<string, string>>({});
+const unfollowBusyGoicId = ref<number | null>(null);
 
 const hasLinkedGoics = (goic: GoicItem) =>
   !!goic.go_uri && (goic.linked_goic_count ?? 0) > 1;
@@ -913,6 +915,40 @@ const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
   }
 };
 
+const unfollowGoic = async (goic: GoicItem) => {
+  const associationUri = goic.follow_info?.association_uri;
+
+  if (!props.caseId || !associationUri) {
+    return;
+  }
+
+  const ok = typeof window !== 'undefined'
+    ? window.confirm('Registratie niet meer volgen?\n\nDe volgrelatie wordt logisch beëindigd en blijft auditbaar.')
+    : false;
+
+  if (!ok) {
+    return;
+  }
+
+  unfollowBusyGoicId.value = goic.id;
+
+  try {
+    await axios.post(apiUrl('/api/goic/ontvolg'), {
+      case_id: props.caseId,
+      association_uri: associationUri,
+    });
+    emit('mutation-changed');
+  } catch (error) {
+    console.error('Fout bij niet meer volgen van registratie:', error);
+
+    if (typeof window !== 'undefined') {
+      window.alert('Niet meer volgen mislukt. Zie console voor details.');
+    }
+  } finally {
+    unfollowBusyGoicId.value = null;
+  }
+};
+
 const visibleFollowSourceEntries = (goic: GoicItem): [string, unknown][] => {
   const state = goic.follow_info?.source_state;
 
@@ -1207,9 +1243,20 @@ watch(() => props.transactieSoortId, () => {
                 v-if="goic.follow_info?.is_followed && visibleFollowSourceEntries(goic).length"
                 class="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 text-xs text-indigo-900 dark:border-indigo-400/30 dark:bg-indigo-900/20 dark:text-indigo-100"
               >
-                <div class="font-semibold">
-                  {{ followedRegistrationTitle(goic) }} #{{ goic.follow_info.source_goic_id ?? '?' }}
-                  <span v-if="goic.follow_info.source_case_id">in case #{{ goic.follow_info.source_case_id }}</span>
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="font-semibold">
+                    {{ followedRegistrationTitle(goic) }} #{{ goic.follow_info.source_goic_id ?? '?' }}
+                    <span v-if="goic.follow_info.source_case_id">in case #{{ goic.follow_info.source_case_id }}</span>
+                  </div>
+                  <button
+                    v-if="goic.follow_info.association_uri"
+                    type="button"
+                    class="inline-flex items-center rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/40 dark:bg-gray-900 dark:text-rose-200 dark:hover:bg-rose-900/20"
+                    :disabled="unfollowBusyGoicId === goic.id"
+                    @click="unfollowGoic(goic)"
+                  >
+                    {{ unfollowBusyGoicId === goic.id ? 'Bezig...' : 'Niet meer volgen' }}
+                  </button>
                 </div>
                 <div class="mt-2 text-[11px] opacity-90">Alleen raadplegen: deze beschrijving komt uit de gevolgde Registratie.</div>
                 <div class="mt-2 rounded border border-indigo-200 bg-white p-2 dark:border-indigo-400/30 dark:bg-gray-900">
