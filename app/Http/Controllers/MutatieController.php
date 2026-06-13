@@ -97,24 +97,12 @@ class MutatieController extends Controller
         }, $objects))));
         $mutationTargetMeta = null;
         if ($mode === 'mutate') {
-            $target = $request->mutationTarget();
+            $mutationTargetMeta = $this->mutationTargetResolver->resolveMutationTargetMeta(
+                $request->mutationTarget() ?? [],
+                (int) $dossier->id
+            );
 
-            $mutationTargetMeta = DB::table('object_mutaties')
-                ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
-                ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
-                ->where('object_mutaties.id', (int) $target['mutatie_id'])
-                ->where('gegevens_objecten_in_context.id', (int) $target['goic_id'])
-                ->where('gegevens_objecten_in_context.dossier_id', (int) $dossier->id)
-                ->first([
-                    'object_mutaties.id as mutatie_id',
-                    'object_mutaties.gegevens_object_in_context_id as goic_id',
-                    'gegevens_objecten_in_context.rdf_uri as goic_uri',
-                    'object_mutaties.sjabloon_uri as tb_class',
-                    'toestands_beschrijvingen.id as tb_id',
-                    'toestands_beschrijvingen.rdf_uri as tb_uri',
-                ]);
-
-            if (! $mutationTargetMeta || ! is_string($mutationTargetMeta->tb_uri) || $mutationTargetMeta->tb_uri === '') {
+            if (! $mutationTargetMeta) {
                 return response()->json(['error' => 'Mutatiedoel niet gevonden of ongeldig.'], 422);
             }
         }
