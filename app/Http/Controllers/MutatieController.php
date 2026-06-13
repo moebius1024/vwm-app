@@ -7,6 +7,7 @@ use App\Services\GoicFollowService;
 use App\Services\GraphService;
 use App\Services\MutationTargetResolver;
 use App\Services\ObjectMutationCommitService;
+use App\Services\ObjectMutationPreparationService;
 use App\Services\RoleMutationService;
 use App\Services\SjabloonMetadataService;
 use App\Services\StateDeletionService;
@@ -27,6 +28,8 @@ class MutatieController extends Controller
 
     protected ObjectMutationCommitService $objectMutationCommitService;
 
+    protected ObjectMutationPreparationService $objectMutationPreparationService;
+
     protected GoicFollowService $goicFollowService;
 
     public function __construct(
@@ -34,6 +37,7 @@ class MutatieController extends Controller
         SjabloonMetadataService $metadataService,
         MutationTargetResolver $mutationTargetResolver,
         ObjectMutationCommitService $objectMutationCommitService,
+        ObjectMutationPreparationService $objectMutationPreparationService,
         GoicFollowService $goicFollowService,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
@@ -42,6 +46,7 @@ class MutatieController extends Controller
         $this->metadataService = $metadataService;
         $this->mutationTargetResolver = $mutationTargetResolver;
         $this->objectMutationCommitService = $objectMutationCommitService;
+        $this->objectMutationPreparationService = $objectMutationPreparationService;
         $this->goicFollowService = $goicFollowService;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
@@ -110,61 +115,17 @@ class MutatieController extends Controller
         $tbClassCapabilities = $this->metadataService->fetchTbClassCapabilitiesByTbClasses($tbClasses);
         $allowedSjabloonCrud = $this->roleMutationService->fetchAllowedSjabloonCrudByTbClass((int) $base['transactie_soort_id']);
 
-        foreach ($objects as &$object) {
-            $tbClass = $object['sjabloon_uri'] ?? null;
-            $expectedTargetClass = is_string($tbClass) ? ($describedClassByTbClass[$tbClass] ?? null) : null;
-
-            if (! is_string($expectedTargetClass) || $expectedTargetClass === '') {
-                return response()->json([
-                    'error' => "Onbekende of onvolledige sjabloondefinitie: {$tbClass}",
-                ], 422);
-            }
-
-            if (($object['target_class'] ?? null) !== $expectedTargetClass) {
-                return response()->json([
-                    'error' => "target_class komt niet overeen met sjabloon {$tbClass}.",
-                ], 422);
-            }
-
-            $object['target_class'] = $expectedTargetClass;
-
-            $crudFlags = $allowedSjabloonCrud[$tbClass] ?? null;
-            $isToestandsWeergave = $this->mutationTargetResolver->tbClassCapabilityEnabled((string) $tbClass, $tbClassCapabilities, 'is_state_projection');
-            $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
-            $attachRequested = ! empty($object['attach_to_existing']);
-            $isAttachOnlySjabloon = $this->roleMutationService->hasCrud($crudFlags, 'A') && ! $this->roleMutationService->hasCrud($crudFlags, 'C');
-            $isAttachIntent = $attachRequested || ($existingGoicId !== null && $existingGoicId > 0) || $isToestandsWeergave || $isAttachOnlySjabloon;
-
-            $object['attach_to_existing'] = $isAttachIntent;
-
-            if ($mode !== 'mutate') {
-                $attachAllowed = $this->roleMutationService->hasCrud($crudFlags, 'A') || ($isToestandsWeergave && $this->roleMutationService->hasCrud($crudFlags, 'C'));
-
-                if ($isAttachIntent && ! $attachAllowed) {
-                    return response()->json([
-                        'error' => "Toevoegen op bestaand object niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
-                    ], 422);
-                }
-
-                if (! $isAttachIntent && ! $this->roleMutationService->hasCrud($crudFlags, 'C')) {
-                    return response()->json([
-                        'error' => "Aanmaken niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
-                    ], 422);
-                }
-            }
-        }
-        unset($object);
-
-        if ($mode === 'mutate' && $mutationTargetMeta) {
-            $tbClass = (string) ($mutationTargetMeta->tb_class ?? '');
-            if ($tbClass === '') {
-                return response()->json(['error' => 'Mutatiedoel heeft een onbekende class.'], 422);
-            }
-            if (! $this->roleMutationService->hasCrud($allowedSjabloonCrud[$tbClass] ?? null, 'U')) {
-                return response()->json([
-                    'error' => "Muteren niet toegestaan voor sjabloon {$tbClass} in deze transactie.",
-                ], 422);
-            }
+        $prepared = $this->objectMutationPreparationService->prepare(
+            $objects,
+            $mode,
+            $mutationTargetMeta,
+            $describedClassByTbClass,
+            $tbClassCapabilities,
+            $allowedSjabloonCrud
+        );
+        $objects = $prepared['objects'];
+        if (is_string($prepared['error'])) {
+            return response()->json(['error' => $prepared['error']], 422);
         }
 
         $goicTargetClassMap = $this->mutationTargetResolver->getGoicTargetClassMapForCase($base['case_id']);
