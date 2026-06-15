@@ -3,11 +3,13 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMutatieRequest;
+use App\Services\CaseTransactionService;
+use App\Services\GoicDisplayService;
 use App\Services\GoicFollowService;
-use App\Services\GraphService;
 use App\Services\MutationTargetResolver;
 use App\Services\ObjectMutationCommitService;
 use App\Services\ObjectMutationPreparationService;
+use App\Services\ObjectMutationTargetService;
 use App\Services\RoleMutationService;
 use App\Services\SjabloonMetadataService;
 use App\Services\StateDeletionService;
@@ -16,8 +18,6 @@ use Illuminate\Support\Facades\DB;
 
 class MutatieController extends Controller
 {
-    protected GraphService $graphService;
-
     protected SjabloonMetadataService $metadataService;
 
     protected MutationTargetResolver $mutationTargetResolver;
@@ -30,24 +30,34 @@ class MutatieController extends Controller
 
     protected ObjectMutationPreparationService $objectMutationPreparationService;
 
+    protected ObjectMutationTargetService $objectMutationTargetService;
+
     protected GoicFollowService $goicFollowService;
 
+    protected CaseTransactionService $caseTransactionService;
+
+    protected GoicDisplayService $goicDisplayService;
+
     public function __construct(
-        GraphService $graphService,
         SjabloonMetadataService $metadataService,
         MutationTargetResolver $mutationTargetResolver,
         ObjectMutationCommitService $objectMutationCommitService,
         ObjectMutationPreparationService $objectMutationPreparationService,
+        ObjectMutationTargetService $objectMutationTargetService,
         GoicFollowService $goicFollowService,
+        CaseTransactionService $caseTransactionService,
+        GoicDisplayService $goicDisplayService,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
     ) {
-        $this->graphService = $graphService;
         $this->metadataService = $metadataService;
         $this->mutationTargetResolver = $mutationTargetResolver;
         $this->objectMutationCommitService = $objectMutationCommitService;
         $this->objectMutationPreparationService = $objectMutationPreparationService;
+        $this->objectMutationTargetService = $objectMutationTargetService;
         $this->goicFollowService = $goicFollowService;
+        $this->caseTransactionService = $caseTransactionService;
+        $this->goicDisplayService = $goicDisplayService;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
     }
@@ -128,138 +138,18 @@ class MutatieController extends Controller
             return response()->json(['error' => $prepared['error']], 422);
         }
 
-        $goicTargetClassMap = $this->mutationTargetResolver->getGoicTargetClassMapForCase($base['case_id']);
-        $classHierarchy = $this->metadataService->fetchSubclassClosureMap();
-        $goicUriById = [];
-        if (! empty($goicTargetClassMap)) {
-            $goicUriById = DB::table('gegevens_objecten_in_context')
-                ->whereIn('id', array_keys($goicTargetClassMap))
-                ->pluck('rdf_uri', 'id')
-                ->all();
+        $targetResolution = $this->objectMutationTargetService->resolve(
+            $objects,
+            $mode,
+            $mutationTargetMeta,
+            (int) $base['case_id'],
+            $tbClassCapabilities
+        );
+        $objects = $targetResolution['objects'];
+        $goicTargetClassMap = $targetResolution['goic_target_class_map'];
+        if (is_string($targetResolution['error'])) {
+            return response()->json(['error' => $targetResolution['error']], 422);
         }
-        $goicIdsByClass = [];
-        foreach ($goicTargetClassMap as $goicId => $classUri) {
-            if (! isset($goicIdsByClass[$classUri])) {
-                $goicIdsByClass[$classUri] = [];
-            }
-            $goicIdsByClass[$classUri][] = $goicId;
-        }
-
-        foreach ($objects as &$object) {
-            $tbClass = (string) ($object['sjabloon_uri'] ?? '');
-            $targetClass = (string) ($object['target_class'] ?? '');
-            $existingGoicId = isset($object['existing_goic_id']) ? (int) $object['existing_goic_id'] : null;
-            $attachToExisting = ! empty($object['attach_to_existing']);
-            $isToestandsWeergave = $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_state_projection');
-            $isBeschrijving = $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $tbClassCapabilities, 'is_beschrijving');
-            $candidateGoicIds = $this->mutationTargetResolver->resolveGoicIdsForTargetClass($targetClass, $goicIdsByClass, $classHierarchy);
-
-            // In mutatiemodus schrijven we altijd op het gekozen bestaande GOIC.
-            if ($mode === 'mutate' && $mutationTargetMeta) {
-                $targetGoicId = (int) $mutationTargetMeta->goic_id;
-                $targetGoicClass = $goicTargetClassMap[$targetGoicId] ?? null;
-                if (! is_string($targetGoicClass) || $targetGoicClass !== $targetClass) {
-                    return response()->json([
-                        'error' => "Mutatiedoel hoort niet bij target_class {$targetClass}.",
-                    ], 422);
-                }
-
-                $object['existing_goic_id'] = $targetGoicId;
-
-                continue;
-            }
-
-            if ($existingGoicId !== null && $existingGoicId > 0) {
-                $existingClass = $goicTargetClassMap[$existingGoicId] ?? null;
-                if (! is_string($existingClass)) {
-                    return response()->json([
-                        'error' => 'Geselecteerd bestaand object hoort niet bij deze case.',
-                    ], 422);
-                }
-
-                if (! $this->mutationTargetResolver->isClassAssignable($targetClass, $existingClass, $classHierarchy)) {
-                    return response()->json([
-                        'error' => "Geselecteerd object heeft class {$existingClass}, verwacht {$targetClass}.",
-                    ], 422);
-                }
-
-                if (! $isToestandsWeergave && ! $attachToExisting) {
-                    return response()->json([
-                        'error' => "Bestaand object koppelen is niet toegestaan voor sjabloon {$tbClass}.",
-                    ], 422);
-                }
-
-                if ($isBeschrijving) {
-                    $existingGoicUri = $goicUriById[$existingGoicId] ?? null;
-                    if (! is_string($existingGoicUri) || $existingGoicUri === '') {
-                        return response()->json([
-                            'error' => 'Kon bestaand GOIC niet resolven.',
-                        ], 422);
-                    }
-
-                    $attachCheck = $this->mutationTargetResolver->evaluateBeschrijvingAttachEligibility((string) $existingGoicUri, $targetClass);
-                    if (! $attachCheck['has_signalement']) {
-                        return response()->json([
-                            'error' => 'Beschrijving toevoegen kan alleen op een object met actief signalement.',
-                        ], 422);
-                    }
-                    if ($attachCheck['has_beschrijving']) {
-                        return response()->json([
-                            'error' => 'Dit object heeft al een actieve beschrijving.',
-                        ], 422);
-                    }
-                }
-
-                $object['existing_goic_id'] = $existingGoicId;
-
-                continue;
-            }
-
-            if ($attachToExisting) {
-                if ($isBeschrijving) {
-                    return response()->json([
-                        'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze beschrijving wilt registreren.",
-                    ], 422);
-                }
-
-                if (count($candidateGoicIds) === 1) {
-                    $object['existing_goic_id'] = $candidateGoicIds[0];
-
-                    continue;
-                }
-
-                if (count($candidateGoicIds) > 1) {
-                    return response()->json([
-                        'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze registratie wilt uitvoeren.",
-                    ], 422);
-                }
-
-                return response()->json([
-                    'error' => "Geen bestaand object ({$targetClass}) gevonden in dit dossier voor deze registratie.",
-                ], 422);
-            }
-
-            if ($isToestandsWeergave) {
-                if (count($candidateGoicIds) === 1) {
-                    $object['existing_goic_id'] = $candidateGoicIds[0];
-
-                    continue;
-                }
-
-                if (count($candidateGoicIds) > 1) {
-                    return response()->json([
-                        'error' => "Kies eerst op welk bestaand object ({$targetClass}) je deze toestandsweergave wilt registreren.",
-                    ], 422);
-                }
-
-                return response()->json([
-                    'error' => "Geen bestaand object ({$targetClass}) gevonden in dit dossier voor deze toestandsweergave.",
-                ], 422);
-            }
-
-            $object['existing_goic_id'] = null;
-        }
-        unset($object);
 
         return $this->objectMutationCommitService->commit(
             $base,
@@ -428,15 +318,7 @@ class MutatieController extends Controller
             ], 200);
         }
 
-        $transactieSoortId = DB::table('case_soort_transactie')
-            ->where('case_soort_id', (int) $targetCase->case_soort_id)
-            ->orderBy('volgorde')
-            ->value('transactie_soort_id');
-
-        if (! $transactieSoortId) {
-            $transactieSoortId = DB::table('transactie_soorten')->orderBy('id')->value('id');
-        }
-
+        $transactieSoortId = $this->caseTransactionService->resolveDefaultTransactionTypeId((int) $targetCase->case_soort_id);
         if (! $transactieSoortId) {
             logger()->warning('volgGoic 422: geen transactie soort', [
                 'case_id' => (int) $targetCase->id,
@@ -497,15 +379,7 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $transactieSoortId = DB::table('case_soort_transactie')
-            ->where('case_soort_id', (int) $targetCase->case_soort_id)
-            ->orderBy('volgorde')
-            ->value('transactie_soort_id');
-
-        if (! $transactieSoortId) {
-            $transactieSoortId = DB::table('transactie_soorten')->orderBy('id')->value('id');
-        }
-
+        $transactieSoortId = $this->caseTransactionService->resolveDefaultTransactionTypeId((int) $targetCase->case_soort_id);
         if (! $transactieSoortId) {
             return response()->json([
                 'error' => 'Geen transactie-soort beschikbaar.',
@@ -552,137 +426,8 @@ class MutatieController extends Controller
             'uris.*' => 'required|string',
         ]);
 
-        $uris = array_values(array_unique(array_filter($validated['uris'], function ($uri) {
-            return is_string($uri) && str_contains($uri, '/data/goic/');
-        })));
-
-        if (empty($uris)) {
-            return response()->json(['labels' => []]);
-        }
-
-        $goics = DB::table('gegevens_objecten_in_context')
-            ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
-            ->join('cases', 'cases.id', '=', 'dossiers.case_id')
-            ->where('cases.user_id', $userId)
-            ->whereIn('gegevens_objecten_in_context.rdf_uri', $uris)
-            ->get([
-                'gegevens_objecten_in_context.id as goic_id',
-                'gegevens_objecten_in_context.rdf_uri as goic_uri',
-            ]);
-
-        $goicByUri = [];
-        foreach ($goics as $row) {
-            $goicByUri[$row->goic_uri] = (int) $row->goic_id;
-        }
-
-        $labels = [];
-        foreach ($uris as $uri) {
-            $goicId = $goicByUri[$uri] ?? null;
-            if (! is_int($goicId) || $goicId <= 0) {
-                $labels[$uri] = $this->resolveGoicLabelFromGraph($uri) ?? "GOIC {$this->shortId($uri)}";
-
-                continue;
-            }
-
-            $label = "GOIC {$this->shortId($uri)}";
-            $rows = DB::table('object_mutaties')
-                ->where('gegevens_object_in_context_id', $goicId)
-                ->orderByDesc('created_at')
-                ->orderByDesc('id')
-                ->limit(20)
-                ->get(['sjabloon_uri', 'data']);
-
-            foreach ($rows as $row) {
-                $data = json_decode((string) ($row->data ?? '{}'), true);
-                if (! is_array($data)) {
-                    continue;
-                }
-
-                $kenteken = $this->extractValueBySuffix($data, '#licensePlate')
-                    ?? $this->extractValueBySuffix($data, 'licensePlate')
-                    ?? $this->extractValueBySuffix($data, '#kenteken')
-                    ?? $this->extractValueBySuffix($data, 'kenteken');
-
-                if (is_string($kenteken) && trim($kenteken) !== '') {
-                    $labels[$uri] = 'Voertuig: '.trim($kenteken);
-
-                    continue 2;
-                }
-            }
-
-            $labels[$uri] = $label;
-        }
-
-        return response()->json(['labels' => $labels]);
-    }
-
-    private function extractValueBySuffix(array $data, string $suffix): ?string
-    {
-        foreach ($data as $key => $value) {
-            if (! is_string($key) || ! str_ends_with($key, $suffix)) {
-                continue;
-            }
-
-            if (is_string($value) && trim($value) !== '') {
-                return $value;
-            }
-        }
-
-        return null;
-    }
-
-    private function shortId(string $uri): string
-    {
-        $trimmed = str_ends_with($uri, '/') ? substr($uri, 0, -1) : $uri;
-        if (str_contains($trimmed, '#')) {
-            $parts = explode('#', $trimmed);
-
-            return (string) end($parts);
-        }
-
-        $parts = explode('/', $trimmed);
-
-        return (string) end($parts);
-    }
-
-    private function resolveGoicLabelFromGraph(string $goicUri): ?string
-    {
-        if (! str_contains($goicUri, '/data/goic/')) {
-            return null;
-        }
-
-        $query = "
-            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
-            PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
-            SELECT ?plate ?brand ?model
-            WHERE {
-                ?tb vwm:beschrijftGOIC <{$goicUri}> .
-                OPTIONAL { ?tb dpm:licensePlate ?plate . }
-                OPTIONAL { ?tb dpm:brand ?brand . }
-                OPTIONAL { ?tb dpm:model ?model . }
-                OPTIONAL { ?tb vwm:geregistreerdOp ?at . }
-            }
-            ORDER BY DESC(?at)
-            LIMIT 1
-        ";
-
-        try {
-            $rows = $this->graphService->query($query);
-        } catch (\Throwable) {
-            return null;
-        }
-
-        $plate = $rows[0]['plate'] ?? null;
-        if (is_string($plate) && trim($plate) !== '') {
-            return 'Voertuig: '.trim($plate);
-        }
-
-        $brand = is_string($rows[0]['brand'] ?? null) ? trim((string) $rows[0]['brand']) : '';
-        $model = is_string($rows[0]['model'] ?? null) ? trim((string) $rows[0]['model']) : '';
-        if ($brand !== '' || $model !== '') {
-            return 'Voertuig: '.trim("{$brand} {$model}");
-        }
-
-        return null;
+        return response()->json([
+            'labels' => $this->goicDisplayService->resolveLabels($validated['uris'], $userId),
+        ]);
     }
 }
