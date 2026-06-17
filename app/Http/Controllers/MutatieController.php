@@ -217,8 +217,8 @@ class MutatieController extends Controller
 
         $bronGoicUri = $sourceInput['uri'];
 
-        $sourceMeta = $this->goicFollowService->fetchSourceGoicMeta($bronGoicUri);
-        if (! $sourceMeta) {
+        $sourceForFollow = $this->goicFollowService->resolveSourceForFollow((int) $targetCase->id, $bronGoicUri);
+        if (($sourceForFollow['reason'] ?? null) === 'source_meta_missing') {
             logger()->warning('volgGoic 422: source meta niet gevonden', [
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
@@ -230,9 +230,7 @@ class MutatieController extends Controller
                 'reason' => 'source_meta_missing',
             ], 422);
         }
-
-        $goUri = $sourceMeta['go_uri'] ?? null;
-        if (! is_string($goUri) || $goUri === '') {
+        if (($sourceForFollow['reason'] ?? null) === 'source_go_missing') {
             logger()->warning('volgGoic 422: bron GO ontbreekt', [
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
@@ -244,9 +242,7 @@ class MutatieController extends Controller
                 'reason' => 'source_go_missing',
             ], 422);
         }
-
-        $sourceTargetClass = $sourceMeta['target_class'] ?? null;
-        if (! is_string($sourceTargetClass) || $sourceTargetClass === '') {
+        if (($sourceForFollow['reason'] ?? null) === 'source_target_class_missing') {
             logger()->warning('volgGoic 422: bron doelclass ontbreekt', [
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
@@ -259,7 +255,9 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $alreadyFollowed = $this->goicFollowService->findExistingFollowedGoicForCase((int) $targetCase->id, $bronGoicUri);
+        $goUri = $sourceForFollow['go_uri'];
+        $sourceTargetClass = $sourceForFollow['target_class'];
+        $alreadyFollowed = $sourceForFollow['already_followed'];
         if ($alreadyFollowed) {
             return response()->json([
                 'message' => 'Deze case volgt deze GOIC al.',

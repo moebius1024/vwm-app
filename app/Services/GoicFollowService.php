@@ -220,6 +220,33 @@ class GoicFollowService
     }
 
     /**
+     * @return array{go_uri?:string,target_class?:string,already_followed?:array{goic_id:int,goic_uri:string}|null,reason?:string}
+     */
+    public function resolveSourceForFollow(int $caseId, string $bronGoicUri): array
+    {
+        $sourceMeta = $this->fetchSourceGoicMeta($bronGoicUri);
+        if (! $sourceMeta) {
+            return ['reason' => 'source_meta_missing'];
+        }
+
+        $goUri = $sourceMeta['go_uri'] ?? null;
+        if (! is_string($goUri) || $goUri === '') {
+            return ['reason' => 'source_go_missing'];
+        }
+
+        $sourceTargetClass = $sourceMeta['target_class'] ?? null;
+        if (! is_string($sourceTargetClass) || $sourceTargetClass === '') {
+            return ['reason' => 'source_target_class_missing'];
+        }
+
+        return [
+            'go_uri' => $goUri,
+            'target_class' => $sourceTargetClass,
+            'already_followed' => $this->findExistingFollowedGoicForCase($caseId, $bronGoicUri),
+        ];
+    }
+
+    /**
      * @return array{go_uri:mixed,target_class:mixed}|null
      */
     public function fetchSourceGoicMeta(string $goicUri): ?array
