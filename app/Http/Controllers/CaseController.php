@@ -339,6 +339,7 @@ class CaseController extends Controller
         $userId = $request->user()->id;
         $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
         $goicUris = $this->fetchGoicUrisByGoUri($goUri);
+        $goicUris = $this->filterActiveGoicUris($goicUris);
         $goics = collect();
 
         if (! empty($goicUris)) {

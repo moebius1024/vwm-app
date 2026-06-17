@@ -5,6 +5,7 @@ use App\Models\User;
 use App\Services\GraphService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Inertia\Testing\AssertableInertia as Assert;
 
 function createFollowGoicFixture(User $user): array
 {
@@ -67,6 +68,7 @@ function createFollowGoicFixture(User $user): array
 
     return [
         'case_id' => $caseId,
+        'rechtsgrond_id' => $rechtsgrondId,
         'source_goic_uri' => $sourceGoicUri,
         'target_class' => 'http://ontologie.politie.nl/def/dpm#Vehicle',
         'go_uri' => 'http://example.test/go/source-vehicle',
@@ -540,3 +542,137 @@ test('go link count filter ignores goics with only invalidated follow associatio
 
     expect($activeUris)->toBe([$activeFollowGoicUri]);
 });
+
+test('go links page hides invalidated followed goics', function () {
+    $user = User::factory()->create();
+    $fixture = createFollowGoicFixture($user);
+    grantFollowGoicRechtsgrondToUser($user->id, $fixture['rechtsgrond_id']);
+
+    $dossierId = DB::table('dossiers')
+        ->where('case_id', $fixture['case_id'])
+        ->value('id');
+    $activeFollowGoicUri = 'http://example.test/goic/active-linked-'.((string) Str::uuid());
+    $invalidatedFollowGoicUri = 'http://example.test/goic/invalidated-linked-'.((string) Str::uuid());
+
+    $activeFollowGoicId = DB::table('gegevens_objecten_in_context')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'rdf_uri' => $activeFollowGoicUri,
+        'dossier_id' => $dossierId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $invalidatedFollowGoicId = DB::table('gegevens_objecten_in_context')->insertGetId([
+        'uuid' => (string) Str::uuid(),
+        'rdf_uri' => $invalidatedFollowGoicUri,
+        'dossier_id' => $dossierId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $transactieId = DB::table('transacties')->insertGetId([
+        'case_id' => $fixture['case_id'],
+        'transactie_soort_id' => DB::table('transactie_soorten')->orderBy('id')->value('id'),
+        'user_id' => $user->id,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    foreach ([
+        [$activeFollowGoicId, $activeFollowGoicUri, null],
+        [$invalidatedFollowGoicId, $invalidatedFollowGoicUri, now()],
+    ] as [$goicId, $goicUri, $invalidatedAt]) {
+        $objectMutatieId = DB::table('object_mutaties')->insertGetId([
+            'transactie_id' => $transactieId,
+            'sjabloon_uri' => 'http://ontologie.politie.nl/def/dpm#DataObjectAssociation',
+            'object_uri' => 'http://example.test/association/page-mutatie-'.((string) Str::uuid()),
+            'gegevens_object_in_context_id' => $goicId,
+            'geproduceerde_toestand_id' => null,
+            'datum_tijd' => now(),
+            'data' => json_encode([
+                'ownedObject' => $goicUri,
+                'targetObject' => $fixture['source_goic_uri'],
+            ], JSON_UNESCAPED_SLASHES),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('data_object_associations')->insert([
+            'uuid' => (string) Str::uuid(),
+            'rdf_uri' => 'http://example.test/association/page-'.((string) Str::uuid()),
+            'object_mutatie_id' => $objectMutatieId,
+            'owned_goic_uri' => $goicUri,
+            'target_goic_uri' => $fixture['source_goic_uri'],
+            'produced_at' => now(),
+            'invalidated_at' => $invalidatedAt,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    $graphService = Mockery::mock(GraphService::class);
+    $graphService
+        ->shouldReceive('query')
+        ->once()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, '?goic vwm:beschrijftGO <'.$fixture['go_uri'].'>')))
+        ->andReturn([
+            ['goic' => $activeFollowGoicUri],
+            ['goic' => $invalidatedFollowGoicUri],
+        ]);
+    $graphService
+        ->shouldReceive('query')
+        ->twice()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, 'beschrijftGOIC')
+            && str_contains($query, 'invalidatedAtTime')))
+        ->andReturn([]);
+    $graphService
+        ->shouldReceive('query')
+        ->once()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, 'DataObjectAssociation')
+            && str_contains($query, $activeFollowGoicUri)
+            && ! str_contains($query, $invalidatedFollowGoicUri)))
+        ->andReturn([]);
+
+    $this->instance(GraphService::class, $graphService);
+
+    $this
+        ->actingAs($user)
+        ->get(route('cases.consult.go', ['go' => $fixture['go_uri']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('cases/GoLinks')
+            ->where('goics.0.id', $activeFollowGoicId)
+            ->missing('goics.1'),
+        );
+});
+
+function grantFollowGoicRechtsgrondToUser(int $userId, int $rechtsgrondId): void
+{
+    $functieSoortId = DB::table('functie_soorten')->insertGetId([
+        'naam' => 'Follow Test Functie',
+        'code' => 'FOLLOW-'.uniqid(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    $medewerkerId = DB::table('medewerkers')->insertGetId([
+        'user_id' => $userId,
+        'medewerker_nummer' => 'FOLLOW-'.uniqid(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('functies')->insert([
+        'medewerker_id' => $medewerkerId,
+        'functie_soort_id' => $functieSoortId,
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+
+    DB::table('autorisatie_rollen')->insert([
+        'functie_soort_id' => $functieSoortId,
+        'rechtsgrond_id' => $rechtsgrondId,
+        'naam' => 'Follow Test Autorisatie',
+        'code' => 'FOLLOW-'.uniqid(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+}

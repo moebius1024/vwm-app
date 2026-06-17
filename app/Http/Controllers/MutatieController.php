@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreMutatieRequest;
 use App\Services\CaseMutationContextService;
 use App\Services\GoicDisplayService;
+use App\Services\GoicFollowAction;
 use App\Services\GoicFollowInputService;
 use App\Services\GoicFollowService;
 use App\Services\MutationTargetResolver;
@@ -41,6 +42,8 @@ class MutatieController extends Controller
 
     protected GoicFollowInputService $goicFollowInputService;
 
+    protected GoicFollowAction $goicFollowAction;
+
     public function __construct(
         SjabloonMetadataService $metadataService,
         MutationTargetResolver $mutationTargetResolver,
@@ -51,6 +54,7 @@ class MutatieController extends Controller
         GoicDisplayService $goicDisplayService,
         CaseMutationContextService $caseMutationContextService,
         GoicFollowInputService $goicFollowInputService,
+        GoicFollowAction $goicFollowAction,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
     ) {
@@ -63,6 +67,7 @@ class MutatieController extends Controller
         $this->goicDisplayService = $goicDisplayService;
         $this->caseMutationContextService = $caseMutationContextService;
         $this->goicFollowInputService = $goicFollowInputService;
+        $this->goicFollowAction = $goicFollowAction;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
     }
@@ -183,81 +188,17 @@ class MutatieController extends Controller
             'case_id' => 'required|integer',
         ]);
 
-        $sourceInput = $this->goicFollowInputService->resolveSourceGoicUri($request, $request->all());
-        if (isset($sourceInput['reason'])) {
-            $this->logFollowWarning($sourceInput['reason'], (int) $validated['case_id'], $userId, $request->input('bron_goic_uri'));
-
-            return $this->jsonError($sourceInput['error'], 422, $sourceInput['reason']);
+        $result = $this->goicFollowAction->execute($request, (int) $validated['case_id'], $userId);
+        if (isset($result['log'])) {
+            $this->logFollowWarning(
+                $result['log']['reason'],
+                $result['log']['case_id'],
+                $result['log']['user_id'],
+                $result['log']['bron_goic_uri'] ?? null,
+            );
         }
 
-        $context = $this->caseMutationContextService->resolveFollowContext((int) $validated['case_id'], $userId);
-        if (($context['reason'] ?? null) === 'case_not_accessible') {
-            return $this->jsonError('Geen toegang tot deze case.', 403);
-        }
-        $targetCase = $context['case'];
-
-        if (($context['reason'] ?? null) === 'dossier_missing') {
-            $this->logFollowWarning('target_case_has_no_dossier', (int) $targetCase->id, $userId);
-
-            return $this->jsonError('Geen dossier gevonden voor deze case.', 422, 'target_case_has_no_dossier');
-        }
-        $targetDossier = $context['dossier'];
-
-        $bronGoicUri = $sourceInput['uri'];
-
-        $sourceForFollow = $this->goicFollowService->resolveSourceForFollow((int) $targetCase->id, $bronGoicUri);
-        if (($sourceForFollow['reason'] ?? null) === 'source_meta_missing') {
-            $this->logFollowWarning('source_meta_missing', (int) $targetCase->id, $userId, $bronGoicUri);
-
-            return $this->jsonError('Bron GOIC niet gevonden in GraphDB.', 422, 'source_meta_missing');
-        }
-        if (($sourceForFollow['reason'] ?? null) === 'source_go_missing') {
-            $this->logFollowWarning('source_go_missing', (int) $targetCase->id, $userId, $bronGoicUri);
-
-            return $this->jsonError('Kon geen GO vinden voor bron GOIC.', 422, 'source_go_missing');
-        }
-        if (($sourceForFollow['reason'] ?? null) === 'source_target_class_missing') {
-            $this->logFollowWarning('source_target_class_missing', (int) $targetCase->id, $userId, $bronGoicUri);
-
-            return $this->jsonError('Kon geen doelclass vinden voor bron GOIC.', 422, 'source_target_class_missing');
-        }
-
-        $goUri = $sourceForFollow['go_uri'];
-        $sourceTargetClass = $sourceForFollow['target_class'];
-        $alreadyFollowed = $sourceForFollow['already_followed'];
-        if ($alreadyFollowed) {
-            return response()->json([
-                'message' => 'Deze case volgt deze GOIC al.',
-                'goic_id' => (int) $alreadyFollowed['goic_id'],
-                'goic_uri' => $alreadyFollowed['goic_uri'],
-                'already_exists' => true,
-            ], 200);
-        }
-
-        if (($context['reason'] ?? null) === 'transactie_soort_missing') {
-            $this->logFollowWarning('transactie_soort_missing', (int) $targetCase->id, $userId);
-
-            return $this->jsonError('Geen transactie-soort beschikbaar.', 422, 'transactie_soort_missing');
-        }
-        $transactieSoortId = $context['transactie_soort_id'];
-
-        $result = $this->goicFollowService->follow(
-            $targetCase,
-            $targetDossier,
-            (int) $transactieSoortId,
-            $bronGoicUri,
-            $goUri,
-            $sourceTargetClass,
-            $userId
-        );
-
-        return response()->json([
-            'message' => 'GOIC wordt nu gevolgd vanuit deze case.',
-            'goic_id' => $result['goic_id'],
-            'goic_uri' => $result['goic_uri'],
-            'association_uri' => $result['association_uri'],
-            'target_class' => $result['target_class'],
-        ]);
+        return response()->json($result['payload'], $result['status']);
     }
 
     public function ontvolgGoic(Request $request)
