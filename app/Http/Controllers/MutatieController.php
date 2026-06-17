@@ -6,8 +6,7 @@ use App\Http\Requests\StoreMutatieRequest;
 use App\Services\CaseMutationContextService;
 use App\Services\GoicDisplayService;
 use App\Services\GoicFollowAction;
-use App\Services\GoicFollowInputService;
-use App\Services\GoicFollowService;
+use App\Services\GoicUnfollowAction;
 use App\Services\MutationTargetResolver;
 use App\Services\ObjectMutationCommitService;
 use App\Services\ObjectMutationPreparationService;
@@ -34,15 +33,13 @@ class MutatieController extends Controller
 
     protected ObjectMutationTargetService $objectMutationTargetService;
 
-    protected GoicFollowService $goicFollowService;
-
     protected GoicDisplayService $goicDisplayService;
 
     protected CaseMutationContextService $caseMutationContextService;
 
-    protected GoicFollowInputService $goicFollowInputService;
-
     protected GoicFollowAction $goicFollowAction;
+
+    protected GoicUnfollowAction $goicUnfollowAction;
 
     public function __construct(
         SjabloonMetadataService $metadataService,
@@ -50,11 +47,10 @@ class MutatieController extends Controller
         ObjectMutationCommitService $objectMutationCommitService,
         ObjectMutationPreparationService $objectMutationPreparationService,
         ObjectMutationTargetService $objectMutationTargetService,
-        GoicFollowService $goicFollowService,
         GoicDisplayService $goicDisplayService,
         CaseMutationContextService $caseMutationContextService,
-        GoicFollowInputService $goicFollowInputService,
         GoicFollowAction $goicFollowAction,
+        GoicUnfollowAction $goicUnfollowAction,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
     ) {
@@ -63,11 +59,10 @@ class MutatieController extends Controller
         $this->objectMutationCommitService = $objectMutationCommitService;
         $this->objectMutationPreparationService = $objectMutationPreparationService;
         $this->objectMutationTargetService = $objectMutationTargetService;
-        $this->goicFollowService = $goicFollowService;
         $this->goicDisplayService = $goicDisplayService;
         $this->caseMutationContextService = $caseMutationContextService;
-        $this->goicFollowInputService = $goicFollowInputService;
         $this->goicFollowAction = $goicFollowAction;
+        $this->goicUnfollowAction = $goicUnfollowAction;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
     }
@@ -212,41 +207,9 @@ class MutatieController extends Controller
             'case_id' => 'required|integer',
         ]);
 
-        $context = $this->caseMutationContextService->resolveUnfollowContext((int) $validated['case_id'], $userId);
-        if (($context['reason'] ?? null) === 'case_not_accessible') {
-            return $this->jsonError('Geen toegang tot deze case.', 403);
-        }
-        $targetCase = $context['case'];
+        $result = $this->goicUnfollowAction->execute($request->all(), (int) $validated['case_id'], $userId);
 
-        $associationInput = $this->goicFollowInputService->resolveAssociationUri($request->all());
-        if (isset($associationInput['reason'])) {
-            return $this->jsonError($associationInput['error'], 422, $associationInput['reason']);
-        }
-        $associationUri = $associationInput['uri'];
-
-        if (($context['reason'] ?? null) === 'transactie_soort_missing') {
-            return $this->jsonError('Geen transactie-soort beschikbaar.', 422, 'transactie_soort_missing');
-        }
-        $transactieSoortId = $context['transactie_soort_id'];
-
-        $result = $this->goicFollowService->unfollow(
-            (int) $targetCase->id,
-            (int) $transactieSoortId,
-            $associationUri,
-            $userId
-        );
-
-        if (! $result) {
-            return $this->jsonError('Actieve volgrelatie niet gevonden.', 422, 'active_association_missing');
-        }
-
-        return response()->json([
-            'message' => 'Registratie wordt niet meer gevolgd.',
-            'association_uri' => $result['association_uri'],
-            'goic_id' => $result['goic_id'],
-            'goic_uri' => $result['goic_uri'],
-            'target_goic_uri' => $result['target_goic_uri'],
-        ]);
+        return response()->json($result['payload'], $result['status']);
     }
 
     /**
