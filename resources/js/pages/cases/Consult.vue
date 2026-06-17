@@ -75,6 +75,24 @@ defineOptions({
 const props = defineProps<Props>();
 const selectedCaseId = ref<number | null>(props.activeCase?.id ?? null);
 const hasSelection = computed(() => !!selectedCaseId.value);
+const isFollowContext = computed(() => !!props.activeCase?.id && !!props.followTargetCaseId && !!props.goUri);
+const pageTitle = computed(() => (
+  isFollowContext.value
+    ? `Raadplegen Case #${props.activeCase?.id} vanuit Case #${props.followTargetCaseId}`
+    : 'Raadplegen'
+));
+const goLinksBackHref = computed(() => {
+  if (!props.goUri || !props.followTargetCaseId) {
+    return '/raadplegen';
+  }
+
+  const params = new URLSearchParams({
+    go: props.goUri,
+    case: String(props.followTargetCaseId),
+  });
+
+  return `/raadplegen/go?${params.toString()}`;
+});
 const labelMap = ref<Record<string, string>>({});
 const goicDisplayMap = ref<Record<string, string>>({});
 const goDisplayMap = ref<Record<string, string>>({});
@@ -922,29 +940,38 @@ watch(() => props.dossiers, () => {
 </script>
 
 <template>
-  <Head title="Raadplegen" />
+  <Head :title="pageTitle" />
 
   <div class="flex h-full flex-1 flex-col gap-6 overflow-x-auto rounded-xl p-4">
     <div class="rounded-2xl border border-sidebar-border/70 bg-gradient-to-br from-white via-white to-emerald-50 px-6 py-5 shadow-sm dark:border-sidebar-border dark:from-gray-900 dark:via-gray-900 dark:to-gray-800">
       <div class="flex items-start justify-between gap-4">
         <div class="flex flex-col gap-1">
-          <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">Raadplegen</h1>
+          <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">{{ pageTitle }}</h1>
           <p class="text-sm text-gray-600 dark:text-gray-300">
             Bekijk dossiers en inhoud van bestaande cases.
           </p>
         </div>
-        <Link
-          class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30"
-          :href="start()"
-        >
-          Terug naar start
-        </Link>
+        <div class="flex flex-wrap justify-end gap-2">
+          <Link
+            v-if="isFollowContext"
+            class="inline-flex items-center rounded-lg border border-indigo-200 bg-white px-4 py-2 text-sm font-semibold text-indigo-800 shadow-sm transition hover:bg-indigo-50 dark:border-indigo-300/30 dark:bg-gray-900 dark:text-indigo-100 dark:hover:bg-indigo-900/30"
+            :href="goLinksBackHref"
+          >
+            Terug naar Gekoppelde Registraties
+          </Link>
+          <Link
+            class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30"
+            :href="start()"
+          >
+            Terug naar Start
+          </Link>
+        </div>
       </div>
     </div>
 
     <div class="relative flex-1 rounded-2xl border border-sidebar-border/70 bg-white p-8 shadow-sm dark:border-sidebar-border dark:bg-gray-900">
       <div class="mx-auto max-w-5xl space-y-6">
-        <div class="rounded-xl border border-emerald-200/70 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-300/20 dark:bg-emerald-900/20 dark:text-emerald-100">
+        <div v-if="!isFollowContext" class="rounded-xl border border-emerald-200/70 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-300/20 dark:bg-emerald-900/20 dark:text-emerald-100">
           <div class="flex flex-wrap items-center justify-between gap-3">
             <div class="flex items-center gap-3">
               <span class="font-medium">Case kiezen</span>
@@ -973,7 +1000,7 @@ watch(() => props.dossiers, () => {
             {{ followError }}
           </div>
 
-          <div v-if="activeCase" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
+          <div v-if="activeCase && !isFollowContext" class="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-sm text-gray-700 dark:border-gray-700 dark:bg-gray-800 dark:text-gray-200">
             Actieve case: {{ activeCase.case_soort_naam }} ({{ activeCase.case_soort_code }}) · #{{ activeCase.id }}
           </div>
 
