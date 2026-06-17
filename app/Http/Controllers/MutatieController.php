@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Http\Requests\StoreMutatieRequest;
 use App\Services\CaseMutationContextService;
 use App\Services\GoicDisplayService;
+use App\Services\GoicFollowInputService;
 use App\Services\GoicFollowService;
 use App\Services\MutationTargetResolver;
 use App\Services\ObjectMutationCommitService;
@@ -37,6 +38,8 @@ class MutatieController extends Controller
 
     protected CaseMutationContextService $caseMutationContextService;
 
+    protected GoicFollowInputService $goicFollowInputService;
+
     public function __construct(
         SjabloonMetadataService $metadataService,
         MutationTargetResolver $mutationTargetResolver,
@@ -46,6 +49,7 @@ class MutatieController extends Controller
         GoicFollowService $goicFollowService,
         GoicDisplayService $goicDisplayService,
         CaseMutationContextService $caseMutationContextService,
+        GoicFollowInputService $goicFollowInputService,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
     ) {
@@ -57,6 +61,7 @@ class MutatieController extends Controller
         $this->goicFollowService = $goicFollowService;
         $this->goicDisplayService = $goicDisplayService;
         $this->caseMutationContextService = $caseMutationContextService;
+        $this->goicFollowInputService = $goicFollowInputService;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
     }
@@ -175,31 +180,19 @@ class MutatieController extends Controller
 
         $validated = $request->validate([
             'case_id' => 'required|integer',
-            'bron_goic_uri' => 'required|string',
         ]);
 
-        // Hard guard: dit endpoint accepteert exact 1 bron-GOIC per request.
-        if ($request->has('bron_goic_uris')) {
-            logger()->warning('volgGoic 422: bron_goic_uris aanwezig', [
-                'case_id' => $validated['case_id'] ?? null,
+        $sourceInput = $this->goicFollowInputService->resolveSourceGoicUri($request, $request->all());
+        if (isset($sourceInput['reason'])) {
+            logger()->warning("volgGoic 422: {$sourceInput['reason']}", [
+                'case_id' => $validated['case_id'],
                 'user_id' => $userId,
+                'bron_goic_uri' => $request->input('bron_goic_uri'),
             ]);
 
             return response()->json([
-                'error' => 'Gebruik exact één bron_goic_uri per request.',
-                'reason' => 'multiple_input_field',
-            ], 422);
-        }
-
-        if (is_array($request->input('bron_goic_uri'))) {
-            logger()->warning('volgGoic 422: bron_goic_uri is array', [
-                'case_id' => $validated['case_id'] ?? null,
-                'user_id' => $userId,
-            ]);
-
-            return response()->json([
-                'error' => 'bron_goic_uri mag geen lijst zijn.',
-                'reason' => 'bron_goic_uri_array',
+                'error' => $sourceInput['error'],
+                'reason' => $sourceInput['reason'],
             ], 422);
         }
 
@@ -222,32 +215,7 @@ class MutatieController extends Controller
         }
         $targetDossier = $context['dossier'];
 
-        $bronGoicUri = trim((string) $validated['bron_goic_uri']);
-        if ($bronGoicUri === '' || preg_match('/[\s,;]/', $bronGoicUri)) {
-            logger()->warning('volgGoic 422: ongeldige single bron_goic_uri syntax', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-                'bron_goic_uri' => $validated['bron_goic_uri'] ?? null,
-            ]);
-
-            return response()->json([
-                'error' => 'Gebruik exact één geldige bron_goic_uri.',
-                'reason' => 'invalid_single_uri_syntax',
-            ], 422);
-        }
-
-        if (! preg_match('/^https?:\/\/[^\s<>"\']+$/', $bronGoicUri)) {
-            logger()->warning('volgGoic 422: bron_goic_uri regex mismatch', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-                'bron_goic_uri' => $bronGoicUri,
-            ]);
-
-            return response()->json([
-                'error' => 'Ongeldige bron GOIC URI.',
-                'reason' => 'invalid_uri_format',
-            ], 422);
-        }
+        $bronGoicUri = $sourceInput['uri'];
 
         $sourceMeta = $this->goicFollowService->fetchSourceGoicMeta($bronGoicUri);
         if (! $sourceMeta) {
@@ -342,7 +310,6 @@ class MutatieController extends Controller
 
         $validated = $request->validate([
             'case_id' => 'required|integer',
-            'association_uri' => 'required|string',
         ]);
 
         $context = $this->caseMutationContextService->resolveUnfollowContext((int) $validated['case_id'], $userId);
@@ -351,13 +318,14 @@ class MutatieController extends Controller
         }
         $targetCase = $context['case'];
 
-        $associationUri = trim((string) $validated['association_uri']);
-        if ($associationUri === '' || ! preg_match('/^https?:\/\/[^\s<>"\']+$/', $associationUri)) {
+        $associationInput = $this->goicFollowInputService->resolveAssociationUri($request->all());
+        if (isset($associationInput['reason'])) {
             return response()->json([
-                'error' => 'Ongeldige association URI.',
-                'reason' => 'invalid_uri_format',
+                'error' => $associationInput['error'],
+                'reason' => $associationInput['reason'],
             ], 422);
         }
+        $associationUri = $associationInput['uri'];
 
         if (($context['reason'] ?? null) === 'transactie_soort_missing') {
             return response()->json([

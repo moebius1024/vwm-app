@@ -158,6 +158,31 @@ test('volg goic rejects a source goic without target class', function () {
         ->and(DB::table('data_object_associations')->count())->toBe(0);
 });
 
+test('volg goic rejects multiple source goic inputs with reason code', function () {
+    $user = User::factory()->create();
+    $fixture = createFollowGoicFixture($user);
+
+    $graphService = Mockery::mock(GraphService::class);
+    $graphService->shouldReceive('query')->never();
+    $graphService->shouldReceive('update')->never();
+
+    $this->instance(GraphService::class, $graphService);
+
+    $response = $this
+        ->actingAs($user)
+        ->postJson('/api/goic/volg', [
+            'case_id' => $fixture['case_id'],
+            'bron_goic_uri' => $fixture['source_goic_uri'],
+            'bron_goic_uris' => [$fixture['source_goic_uri']],
+        ]);
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('reason', 'multiple_input_field');
+
+    expect(DB::table('data_object_associations')->count())->toBe(0);
+});
+
 test('volg goic returns existing local goic when source is already followed', function () {
     $user = User::factory()->create();
     $fixture = createFollowGoicFixture($user);
@@ -405,6 +430,29 @@ test('ontvolg goic invalidates the data object association', function () {
 
     expect($association?->invalidated_at)->not->toBeNull()
         ->and($deleteMutationData)->toContain('beeindig_volg_goic');
+});
+
+test('ontvolg goic rejects invalid association uri values with reason code', function () {
+    $user = User::factory()->create();
+    $fixture = createFollowGoicFixture($user);
+
+    $graphService = Mockery::mock(GraphService::class);
+    $graphService->shouldReceive('update')->never();
+
+    $this->instance(GraphService::class, $graphService);
+
+    $response = $this
+        ->actingAs($user)
+        ->postJson('/api/goic/ontvolg', [
+            'case_id' => $fixture['case_id'],
+            'association_uri' => 'urn:association:123',
+        ]);
+
+    $response
+        ->assertUnprocessable()
+        ->assertJsonPath('reason', 'invalid_uri_format');
+
+    expect(DB::table('data_object_associations')->count())->toBe(0);
 });
 
 test('go link count filter ignores goics with only invalidated follow association', function () {
