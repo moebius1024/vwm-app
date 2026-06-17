@@ -14,6 +14,7 @@ use App\Services\ObjectMutationTargetService;
 use App\Services\RoleMutationService;
 use App\Services\SjabloonMetadataService;
 use App\Services\StateDeletionService;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class MutatieController extends Controller
@@ -73,7 +74,7 @@ class MutatieController extends Controller
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
-            return response()->json(['error' => 'Niet geauthenticeerd.'], 401);
+            return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
         $base = $request->base();
@@ -81,10 +82,10 @@ class MutatieController extends Controller
 
         $context = $this->caseMutationContextService->resolveStoreContext((int) $base['case_id'], $userId);
         if (($context['reason'] ?? null) === 'case_not_accessible') {
-            return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
+            return $this->jsonError('Geen toegang tot deze case.', 403);
         }
         if (($context['reason'] ?? null) === 'dossier_missing') {
-            return response()->json(['error' => 'Geen dossier gevonden voor deze case'], 422);
+            return $this->jsonError('Geen dossier gevonden voor deze case');
         }
         $dossier = $context['dossier'];
 
@@ -113,7 +114,7 @@ class MutatieController extends Controller
             );
 
             if (! $mutationTargetMeta) {
-                return response()->json(['error' => 'Mutatiedoel niet gevonden of ongeldig.'], 422);
+                return $this->jsonError('Mutatiedoel niet gevonden of ongeldig.');
             }
         }
         $describedClassByTbClass = $this->metadataService->fetchDescribedClassByTbClasses($tbClasses);
@@ -130,7 +131,7 @@ class MutatieController extends Controller
         );
         $objects = $prepared['objects'];
         if (is_string($prepared['error'])) {
-            return response()->json(['error' => $prepared['error']], 422);
+            return $this->jsonError($prepared['error']);
         }
 
         $targetResolution = $this->objectMutationTargetService->resolve(
@@ -143,7 +144,7 @@ class MutatieController extends Controller
         $objects = $targetResolution['objects'];
         $goicTargetClassMap = $targetResolution['goic_target_class_map'];
         if (is_string($targetResolution['error'])) {
-            return response()->json(['error' => $targetResolution['error']], 422);
+            return $this->jsonError($targetResolution['error']);
         }
 
         return $this->objectMutationCommitService->commit(
@@ -175,7 +176,7 @@ class MutatieController extends Controller
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
-            return response()->json(['error' => 'Niet geauthenticeerd.'], 401);
+            return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
         $validated = $request->validate([
@@ -184,34 +185,21 @@ class MutatieController extends Controller
 
         $sourceInput = $this->goicFollowInputService->resolveSourceGoicUri($request, $request->all());
         if (isset($sourceInput['reason'])) {
-            logger()->warning("volgGoic 422: {$sourceInput['reason']}", [
-                'case_id' => $validated['case_id'],
-                'user_id' => $userId,
-                'bron_goic_uri' => $request->input('bron_goic_uri'),
-            ]);
+            $this->logFollowWarning($sourceInput['reason'], (int) $validated['case_id'], $userId, $request->input('bron_goic_uri'));
 
-            return response()->json([
-                'error' => $sourceInput['error'],
-                'reason' => $sourceInput['reason'],
-            ], 422);
+            return $this->jsonError($sourceInput['error'], 422, $sourceInput['reason']);
         }
 
         $context = $this->caseMutationContextService->resolveFollowContext((int) $validated['case_id'], $userId);
         if (($context['reason'] ?? null) === 'case_not_accessible') {
-            return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
+            return $this->jsonError('Geen toegang tot deze case.', 403);
         }
         $targetCase = $context['case'];
 
         if (($context['reason'] ?? null) === 'dossier_missing') {
-            logger()->warning('volgGoic 422: geen dossier', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-            ]);
+            $this->logFollowWarning('target_case_has_no_dossier', (int) $targetCase->id, $userId);
 
-            return response()->json([
-                'error' => 'Geen dossier gevonden voor deze case.',
-                'reason' => 'target_case_has_no_dossier',
-            ], 422);
+            return $this->jsonError('Geen dossier gevonden voor deze case.', 422, 'target_case_has_no_dossier');
         }
         $targetDossier = $context['dossier'];
 
@@ -219,40 +207,19 @@ class MutatieController extends Controller
 
         $sourceForFollow = $this->goicFollowService->resolveSourceForFollow((int) $targetCase->id, $bronGoicUri);
         if (($sourceForFollow['reason'] ?? null) === 'source_meta_missing') {
-            logger()->warning('volgGoic 422: source meta niet gevonden', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-                'bron_goic_uri' => $bronGoicUri,
-            ]);
+            $this->logFollowWarning('source_meta_missing', (int) $targetCase->id, $userId, $bronGoicUri);
 
-            return response()->json([
-                'error' => 'Bron GOIC niet gevonden in GraphDB.',
-                'reason' => 'source_meta_missing',
-            ], 422);
+            return $this->jsonError('Bron GOIC niet gevonden in GraphDB.', 422, 'source_meta_missing');
         }
         if (($sourceForFollow['reason'] ?? null) === 'source_go_missing') {
-            logger()->warning('volgGoic 422: bron GO ontbreekt', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-                'bron_goic_uri' => $bronGoicUri,
-            ]);
+            $this->logFollowWarning('source_go_missing', (int) $targetCase->id, $userId, $bronGoicUri);
 
-            return response()->json([
-                'error' => 'Kon geen GO vinden voor bron GOIC.',
-                'reason' => 'source_go_missing',
-            ], 422);
+            return $this->jsonError('Kon geen GO vinden voor bron GOIC.', 422, 'source_go_missing');
         }
         if (($sourceForFollow['reason'] ?? null) === 'source_target_class_missing') {
-            logger()->warning('volgGoic 422: bron doelclass ontbreekt', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-                'bron_goic_uri' => $bronGoicUri,
-            ]);
+            $this->logFollowWarning('source_target_class_missing', (int) $targetCase->id, $userId, $bronGoicUri);
 
-            return response()->json([
-                'error' => 'Kon geen doelclass vinden voor bron GOIC.',
-                'reason' => 'source_target_class_missing',
-            ], 422);
+            return $this->jsonError('Kon geen doelclass vinden voor bron GOIC.', 422, 'source_target_class_missing');
         }
 
         $goUri = $sourceForFollow['go_uri'];
@@ -268,15 +235,9 @@ class MutatieController extends Controller
         }
 
         if (($context['reason'] ?? null) === 'transactie_soort_missing') {
-            logger()->warning('volgGoic 422: geen transactie soort', [
-                'case_id' => (int) $targetCase->id,
-                'user_id' => $userId,
-            ]);
+            $this->logFollowWarning('transactie_soort_missing', (int) $targetCase->id, $userId);
 
-            return response()->json([
-                'error' => 'Geen transactie-soort beschikbaar.',
-                'reason' => 'transactie_soort_missing',
-            ], 422);
+            return $this->jsonError('Geen transactie-soort beschikbaar.', 422, 'transactie_soort_missing');
         }
         $transactieSoortId = $context['transactie_soort_id'];
 
@@ -303,7 +264,7 @@ class MutatieController extends Controller
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
-            return response()->json(['error' => 'Niet geauthenticeerd.'], 401);
+            return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
         $validated = $request->validate([
@@ -312,24 +273,18 @@ class MutatieController extends Controller
 
         $context = $this->caseMutationContextService->resolveUnfollowContext((int) $validated['case_id'], $userId);
         if (($context['reason'] ?? null) === 'case_not_accessible') {
-            return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
+            return $this->jsonError('Geen toegang tot deze case.', 403);
         }
         $targetCase = $context['case'];
 
         $associationInput = $this->goicFollowInputService->resolveAssociationUri($request->all());
         if (isset($associationInput['reason'])) {
-            return response()->json([
-                'error' => $associationInput['error'],
-                'reason' => $associationInput['reason'],
-            ], 422);
+            return $this->jsonError($associationInput['error'], 422, $associationInput['reason']);
         }
         $associationUri = $associationInput['uri'];
 
         if (($context['reason'] ?? null) === 'transactie_soort_missing') {
-            return response()->json([
-                'error' => 'Geen transactie-soort beschikbaar.',
-                'reason' => 'transactie_soort_missing',
-            ], 422);
+            return $this->jsonError('Geen transactie-soort beschikbaar.', 422, 'transactie_soort_missing');
         }
         $transactieSoortId = $context['transactie_soort_id'];
 
@@ -341,10 +296,7 @@ class MutatieController extends Controller
         );
 
         if (! $result) {
-            return response()->json([
-                'error' => 'Actieve volgrelatie niet gevonden.',
-                'reason' => 'active_association_missing',
-            ], 422);
+            return $this->jsonError('Actieve volgrelatie niet gevonden.', 422, 'active_association_missing');
         }
 
         return response()->json([
@@ -364,7 +316,7 @@ class MutatieController extends Controller
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
-            return response()->json(['error' => 'Niet geauthenticeerd.'], 401);
+            return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
         $validated = $request->validate([
@@ -375,5 +327,29 @@ class MutatieController extends Controller
         return response()->json([
             'labels' => $this->goicDisplayService->resolveLabels($validated['uris'], $userId),
         ]);
+    }
+
+    private function jsonError(string $error, int $status = 422, ?string $reason = null): JsonResponse
+    {
+        $payload = ['error' => $error];
+        if ($reason !== null) {
+            $payload['reason'] = $reason;
+        }
+
+        return response()->json($payload, $status);
+    }
+
+    private function logFollowWarning(string $reason, int $caseId, int $userId, mixed $bronGoicUri = null): void
+    {
+        $context = [
+            'case_id' => $caseId,
+            'user_id' => $userId,
+        ];
+
+        if ($bronGoicUri !== null) {
+            $context['bron_goic_uri'] = $bronGoicUri;
+        }
+
+        logger()->warning("volgGoic 422: {$reason}", $context);
     }
 }
