@@ -3,7 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMutatieRequest;
-use App\Services\CaseTransactionService;
+use App\Services\CaseMutationContextService;
 use App\Services\GoicDisplayService;
 use App\Services\GoicFollowService;
 use App\Services\MutationTargetResolver;
@@ -14,7 +14,6 @@ use App\Services\RoleMutationService;
 use App\Services\SjabloonMetadataService;
 use App\Services\StateDeletionService;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class MutatieController extends Controller
 {
@@ -34,9 +33,9 @@ class MutatieController extends Controller
 
     protected GoicFollowService $goicFollowService;
 
-    protected CaseTransactionService $caseTransactionService;
-
     protected GoicDisplayService $goicDisplayService;
+
+    protected CaseMutationContextService $caseMutationContextService;
 
     public function __construct(
         SjabloonMetadataService $metadataService,
@@ -45,8 +44,8 @@ class MutatieController extends Controller
         ObjectMutationPreparationService $objectMutationPreparationService,
         ObjectMutationTargetService $objectMutationTargetService,
         GoicFollowService $goicFollowService,
-        CaseTransactionService $caseTransactionService,
         GoicDisplayService $goicDisplayService,
+        CaseMutationContextService $caseMutationContextService,
         RoleMutationService $roleMutationService,
         StateDeletionService $stateDeletionService,
     ) {
@@ -56,8 +55,8 @@ class MutatieController extends Controller
         $this->objectMutationPreparationService = $objectMutationPreparationService;
         $this->objectMutationTargetService = $objectMutationTargetService;
         $this->goicFollowService = $goicFollowService;
-        $this->caseTransactionService = $caseTransactionService;
         $this->goicDisplayService = $goicDisplayService;
+        $this->caseMutationContextService = $caseMutationContextService;
         $this->roleMutationService = $roleMutationService;
         $this->stateDeletionService = $stateDeletionService;
     }
@@ -75,23 +74,14 @@ class MutatieController extends Controller
         $base = $request->base();
         $mode = $request->mode();
 
-        $case = DB::table('cases')
-            ->where('id', $base['case_id'])
-            ->where('user_id', $userId)
-            ->first(['id']);
-
-        if (! $case) {
+        $context = $this->caseMutationContextService->resolveStoreContext((int) $base['case_id'], $userId);
+        if (($context['reason'] ?? null) === 'case_not_accessible') {
             return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
         }
-
-        $dossier = DB::table('dossiers')
-            ->where('case_id', $base['case_id'])
-            ->orderBy('id')
-            ->first();
-
-        if (! $dossier) {
+        if (($context['reason'] ?? null) === 'dossier_missing') {
             return response()->json(['error' => 'Geen dossier gevonden voor deze case'], 422);
         }
+        $dossier = $context['dossier'];
 
         $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
         if ($mode === 'delete') {
@@ -213,21 +203,13 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $targetCase = DB::table('cases')
-            ->where('id', (int) $validated['case_id'])
-            ->where('user_id', $userId)
-            ->first(['id', 'case_soort_id']);
-
-        if (! $targetCase) {
+        $context = $this->caseMutationContextService->resolveFollowContext((int) $validated['case_id'], $userId);
+        if (($context['reason'] ?? null) === 'case_not_accessible') {
             return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
         }
+        $targetCase = $context['case'];
 
-        $targetDossier = DB::table('dossiers')
-            ->where('case_id', (int) $targetCase->id)
-            ->orderBy('id')
-            ->first(['id', 'rdf_uri']);
-
-        if (! $targetDossier) {
+        if (($context['reason'] ?? null) === 'dossier_missing') {
             logger()->warning('volgGoic 422: geen dossier', [
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
@@ -238,6 +220,7 @@ class MutatieController extends Controller
                 'reason' => 'target_case_has_no_dossier',
             ], 422);
         }
+        $targetDossier = $context['dossier'];
 
         $bronGoicUri = trim((string) $validated['bron_goic_uri']);
         if ($bronGoicUri === '' || preg_match('/[\s,;]/', $bronGoicUri)) {
@@ -318,8 +301,7 @@ class MutatieController extends Controller
             ], 200);
         }
 
-        $transactieSoortId = $this->caseTransactionService->resolveDefaultTransactionTypeId((int) $targetCase->case_soort_id);
-        if (! $transactieSoortId) {
+        if (($context['reason'] ?? null) === 'transactie_soort_missing') {
             logger()->warning('volgGoic 422: geen transactie soort', [
                 'case_id' => (int) $targetCase->id,
                 'user_id' => $userId,
@@ -330,6 +312,7 @@ class MutatieController extends Controller
                 'reason' => 'transactie_soort_missing',
             ], 422);
         }
+        $transactieSoortId = $context['transactie_soort_id'];
 
         $result = $this->goicFollowService->follow(
             $targetCase,
@@ -362,14 +345,11 @@ class MutatieController extends Controller
             'association_uri' => 'required|string',
         ]);
 
-        $targetCase = DB::table('cases')
-            ->where('id', (int) $validated['case_id'])
-            ->where('user_id', $userId)
-            ->first(['id', 'case_soort_id']);
-
-        if (! $targetCase) {
+        $context = $this->caseMutationContextService->resolveUnfollowContext((int) $validated['case_id'], $userId);
+        if (($context['reason'] ?? null) === 'case_not_accessible') {
             return response()->json(['error' => 'Geen toegang tot deze case.'], 403);
         }
+        $targetCase = $context['case'];
 
         $associationUri = trim((string) $validated['association_uri']);
         if ($associationUri === '' || ! preg_match('/^https?:\/\/[^\s<>"\']+$/', $associationUri)) {
@@ -379,13 +359,13 @@ class MutatieController extends Controller
             ], 422);
         }
 
-        $transactieSoortId = $this->caseTransactionService->resolveDefaultTransactionTypeId((int) $targetCase->case_soort_id);
-        if (! $transactieSoortId) {
+        if (($context['reason'] ?? null) === 'transactie_soort_missing') {
             return response()->json([
                 'error' => 'Geen transactie-soort beschikbaar.',
                 'reason' => 'transactie_soort_missing',
             ], 422);
         }
+        $transactieSoortId = $context['transactie_soort_id'];
 
         $result = $this->goicFollowService->unfollow(
             (int) $targetCase->id,
