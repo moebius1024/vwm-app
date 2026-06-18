@@ -18,7 +18,10 @@ class StoreMutationAction
         private readonly StateDeletionService $stateDeletionService,
     ) {}
 
-    public function execute(StoreMutatieRequest $request, int $userId): JsonResponse
+    /**
+     * @return JsonResponse|array{status:int,payload:array<string,mixed>}
+     */
+    public function execute(StoreMutatieRequest $request, int $userId): JsonResponse|array
     {
         $base = $request->base();
         $mode = $request->mode();
@@ -108,8 +111,14 @@ class StoreMutationAction
         );
     }
 
-    private function jsonError(string $error, int $status = 422): JsonResponse
+    /**
+     * @return array{status:int,payload:array<string,mixed>}
+     */
+    private function jsonError(string $error, int $status = 422): array
     {
-        return response()->json(['error' => $error], $status);
+        return [
+            'status' => $status,
+            'payload' => ['error' => $error],
+        ];
     }
 }

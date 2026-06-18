@@ -42,7 +42,7 @@ class MutatieController extends Controller
             return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
-        return $this->storeMutationAction->execute($request, $userId);
+        return $this->actionResponse($this->storeMutationAction->execute($request, $userId));
     }
 
     /**
@@ -73,7 +73,7 @@ class MutatieController extends Controller
             );
         }
 
-        return response()->json($result['payload'], $result['status']);
+        return $this->actionResponse($result);
     }
 
     public function ontvolgGoic(Request $request)
@@ -89,7 +89,7 @@ class MutatieController extends Controller
 
         $result = $this->goicUnfollowAction->execute($request->all(), (int) $validated['case_id'], $userId);
 
-        return response()->json($result['payload'], $result['status']);
+        return $this->actionResponse($result);
     }
 
     /**
@@ -121,6 +121,18 @@ class MutatieController extends Controller
         }
 
         return response()->json($payload, $status);
+    }
+
+    /**
+     * @param  JsonResponse|array{status:int,payload:array<string,mixed>}  $result
+     */
+    private function actionResponse(JsonResponse|array $result): JsonResponse
+    {
+        if ($result instanceof JsonResponse) {
+            return $result;
+        }
+
+        return response()->json($result['payload'], $result['status']);
     }
 
     private function logFollowWarning(string $reason, int $caseId, int $userId, mixed $bronGoicUri = null): void
