@@ -23,6 +23,7 @@ Kernprincipe:
 
 2. Architectuurprincipes
 - `readme/Architecture_Principles.md`
+- `readme/Verbeterpunten.md`
 
 3. Ontologie + SHACL + GraphDB afspraken
 - `readme/RDF_Validatie_Werkafspraken.md`
