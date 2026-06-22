@@ -25,7 +25,7 @@ class StoreMutatieRequest extends FormRequest
 
         $mode = $this->mode();
         if ($mode === 'delete') {
-            return $rules;
+            return array_merge($rules, $this->deletePayloadRules());
         }
 
         if ($this->hasObjectPayload()) {
@@ -94,6 +94,25 @@ class StoreMutatieRequest extends FormRequest
         $target = $this->validated('target');
 
         return is_array($target) ? $target : null;
+    }
+
+    /**
+     * @return array{delete_type:string,target:array{goic_id:int,mutatie_id:int,tb_rdf_uri:?string,sjabloon_uri:?string}}
+     */
+    public function deletePayload(): array
+    {
+        $target = $this->validated('target', []);
+        $target = is_array($target) ? $target : [];
+
+        return [
+            'delete_type' => (string) $this->validated('delete_type'),
+            'target' => [
+                'goic_id' => (int) ($target['goic_id'] ?? 0),
+                'mutatie_id' => (int) ($target['mutatie_id'] ?? 0),
+                'tb_rdf_uri' => is_string($target['tb_rdf_uri'] ?? null) ? $target['tb_rdf_uri'] : null,
+                'sjabloon_uri' => is_string($target['sjabloon_uri'] ?? null) ? $target['sjabloon_uri'] : null,
+            ],
+        ];
     }
 
     private function hasObjectPayload(): bool
@@ -169,6 +188,21 @@ class StoreMutatieRequest extends FormRequest
     private function mutationTargetRules(): array
     {
         return [
+            'target' => ['required', 'array'],
+            'target.goic_id' => ['required', 'integer'],
+            'target.mutatie_id' => ['required', 'integer'],
+            'target.tb_rdf_uri' => ['nullable', 'string'],
+            'target.sjabloon_uri' => ['nullable', 'string'],
+        ];
+    }
+
+    /**
+     * @return array<string, ValidationRule|array<mixed>|string>
+     */
+    private function deletePayloadRules(): array
+    {
+        return [
+            'delete_type' => ['required', 'string', 'in:role,toestand'],
             'target' => ['required', 'array'],
             'target.goic_id' => ['required', 'integer'],
             'target.mutatie_id' => ['required', 'integer'],

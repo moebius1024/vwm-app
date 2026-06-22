@@ -2,30 +2,29 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Request;
-
 class GoicFollowInputService
 {
     /**
+     * @param  array<string, mixed>  $input
      * @return array{uri?: string, reason?: string, error?: string}
      */
-    public function resolveSourceGoicUri(Request $request, array $validated): array
+    public function resolveSourceGoicUri(array $input): array
     {
-        if ($request->has('bron_goic_uris')) {
+        if (array_key_exists('bron_goic_uris', $input)) {
             return [
                 'error' => 'Gebruik exact één bron_goic_uri per request.',
                 'reason' => 'multiple_input_field',
             ];
         }
 
-        if (is_array($request->input('bron_goic_uri'))) {
+        if (is_array($input['bron_goic_uri'] ?? null)) {
             return [
                 'error' => 'bron_goic_uri mag geen lijst zijn.',
                 'reason' => 'bron_goic_uri_array',
             ];
         }
 
-        $uri = trim((string) ($validated['bron_goic_uri'] ?? ''));
+        $uri = trim((string) ($input['bron_goic_uri'] ?? ''));
         if ($uri === '' || preg_match('/[\s,;]/', $uri)) {
             return [
                 'error' => 'Gebruik exact één geldige bron_goic_uri.',

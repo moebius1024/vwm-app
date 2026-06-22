@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 
@@ -16,22 +15,14 @@ class StateDeletionService
     ) {}
 
     /**
+     * @param  array{delete_type:string,target:array{goic_id:int,mutatie_id:int,tb_rdf_uri:?string,sjabloon_uri:?string}}  $deletePayload
      * @param  array<string, mixed>  $base
      * @param  array<string, array<string, mixed>>  $roleShapeRules
      * @return array{status:int,payload:array<string,mixed>}
      */
-    public function delete(Request $request, array $base, int $dossierId, int $userId, array $roleShapeRules): array
+    public function delete(array $deletePayload, array $base, int $dossierId, int $userId, array $roleShapeRules): array
     {
-        $payload = $request->validate([
-            'delete_type' => 'required|string|in:role,toestand',
-            'target' => 'required|array',
-            'target.goic_id' => 'required|integer',
-            'target.mutatie_id' => 'required|integer',
-            'target.tb_rdf_uri' => 'nullable|string',
-            'target.sjabloon_uri' => 'nullable|string',
-        ]);
-
-        $target = $payload['target'];
+        $target = $deletePayload['target'];
         $targetRow = DB::table('object_mutaties')
             ->join('gegevens_objecten_in_context', 'gegevens_objecten_in_context.id', '=', 'object_mutaties.gegevens_object_in_context_id')
             ->leftJoin('toestands_beschrijvingen', 'toestands_beschrijvingen.id', '=', 'object_mutaties.geproduceerde_toestand_id')
@@ -51,7 +42,7 @@ class StateDeletionService
             return $this->result(['error' => 'Doel voor verwijderen niet gevonden.'], 422);
         }
 
-        $deleteType = (string) ($payload['delete_type'] ?? '');
+        $deleteType = (string) ($deletePayload['delete_type'] ?? '');
         if ($deleteType === 'role') {
             if (! $this->roleMutationService->isRoleDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
                 return $this->result(['error' => 'Verwijderen niet toegestaan voor deze rol in deze transactie.'], 422);

@@ -2,8 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Http\Request;
-
 class GoicFollowAction
 {
     public function __construct(
@@ -13,17 +11,18 @@ class GoicFollowAction
     ) {}
 
     /**
+     * @param  array<string, mixed>  $input
      * @return array{status:int,payload:array<string,mixed>,log?:array{reason:string,case_id:int,user_id:int,bron_goic_uri?:mixed}}
      */
-    public function execute(Request $request, int $caseId, int $userId): array
+    public function execute(array $input, int $caseId, int $userId): array
     {
-        $sourceInput = $this->goicFollowInputService->resolveSourceGoicUri($request, $request->all());
+        $sourceInput = $this->goicFollowInputService->resolveSourceGoicUri($input);
         if (isset($sourceInput['reason'])) {
             return $this->error($sourceInput['error'], $sourceInput['reason'], 422, [
                 'reason' => $sourceInput['reason'],
                 'case_id' => $caseId,
                 'user_id' => $userId,
-                'bron_goic_uri' => $request->input('bron_goic_uri'),
+                'bron_goic_uri' => $input['bron_goic_uri'] ?? null,
             ]);
         }
 

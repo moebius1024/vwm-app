@@ -63,7 +63,7 @@ class MutatieController extends Controller
             'case_id' => 'required|integer',
         ]);
 
-        $result = $this->goicFollowAction->execute($request, (int) $validated['case_id'], $userId);
+        $result = $this->goicFollowAction->execute($request->all(), (int) $validated['case_id'], $userId);
         if (isset($result['log'])) {
             $this->logFollowWarning(
                 $result['log']['reason'],

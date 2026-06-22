@@ -1,20 +1,13 @@
 <?php
 
 use App\Services\GoicFollowInputService;
-use Illuminate\Http\Request;
-
-function goicFollowInputRequest(array $payload): Request
-{
-    return Request::create('/api/goic/volg', 'POST', $payload);
-}
 
 test('it resolves a trimmed source goic uri', function () {
     $service = new GoicFollowInputService;
 
-    $result = $service->resolveSourceGoicUri(
-        goicFollowInputRequest(['bron_goic_uri' => '  http://example.test/goic/123  ']),
-        ['bron_goic_uri' => '  http://example.test/goic/123  ']
-    );
+    $result = $service->resolveSourceGoicUri([
+        'bron_goic_uri' => '  http://example.test/goic/123  ',
+    ]);
 
     expect($result)->toBe(['uri' => 'http://example.test/goic/123']);
 });
@@ -22,13 +15,10 @@ test('it resolves a trimmed source goic uri', function () {
 test('it rejects multiple source goic input fields', function () {
     $service = new GoicFollowInputService;
 
-    $result = $service->resolveSourceGoicUri(
-        goicFollowInputRequest([
-            'bron_goic_uri' => 'http://example.test/goic/123',
-            'bron_goic_uris' => ['http://example.test/goic/123'],
-        ]),
-        ['bron_goic_uri' => 'http://example.test/goic/123']
-    );
+    $result = $service->resolveSourceGoicUri([
+        'bron_goic_uri' => 'http://example.test/goic/123',
+        'bron_goic_uris' => ['http://example.test/goic/123'],
+    ]);
 
     expect($result)->toMatchArray([
         'reason' => 'multiple_input_field',
@@ -38,10 +28,9 @@ test('it rejects multiple source goic input fields', function () {
 test('it rejects source goic uri arrays', function () {
     $service = new GoicFollowInputService;
 
-    $result = $service->resolveSourceGoicUri(
-        goicFollowInputRequest(['bron_goic_uri' => ['http://example.test/goic/123']]),
-        ['bron_goic_uri' => ['http://example.test/goic/123']]
-    );
+    $result = $service->resolveSourceGoicUri([
+        'bron_goic_uri' => ['http://example.test/goic/123'],
+    ]);
 
     expect($result)->toMatchArray([
         'reason' => 'bron_goic_uri_array',
@@ -51,10 +40,7 @@ test('it rejects source goic uri arrays', function () {
 test('it rejects source goic uri values with separators', function (string $uri) {
     $service = new GoicFollowInputService;
 
-    $result = $service->resolveSourceGoicUri(
-        goicFollowInputRequest(['bron_goic_uri' => $uri]),
-        ['bron_goic_uri' => $uri]
-    );
+    $result = $service->resolveSourceGoicUri(['bron_goic_uri' => $uri]);
 
     expect($result)->toMatchArray([
         'reason' => 'invalid_single_uri_syntax',
@@ -69,10 +55,7 @@ test('it rejects source goic uri values with separators', function (string $uri)
 test('it rejects non-http source goic uri values', function () {
     $service = new GoicFollowInputService;
 
-    $result = $service->resolveSourceGoicUri(
-        goicFollowInputRequest(['bron_goic_uri' => 'urn:goic:123']),
-        ['bron_goic_uri' => 'urn:goic:123']
-    );
+    $result = $service->resolveSourceGoicUri(['bron_goic_uri' => 'urn:goic:123']);
 
     expect($result)->toMatchArray([
         'reason' => 'invalid_uri_format',

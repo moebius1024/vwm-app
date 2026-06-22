@@ -36,7 +36,13 @@ class StoreMutationAction
 
         $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
         if ($mode === 'delete') {
-            return $this->stateDeletionService->delete($request, $base, (int) $dossier->id, $userId, $roleShapeRules);
+            return $this->stateDeletionService->delete(
+                $request->deletePayload(),
+                $base,
+                (int) $dossier->id,
+                $userId,
+                $roleShapeRules
+            );
         }
 
         $rolTypesByKey = $this->metadataService->fetchRolTypesByKey();
