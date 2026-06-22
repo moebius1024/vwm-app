@@ -113,7 +113,7 @@ test('it collects rule based invalidation uris', function () {
     ]);
 });
 
-test('it cascades role and state projection rows only when no kernel remains', function () {
+test('it cascades dependent states when no kernel remains', function () {
     $roleMutationService = Mockery::mock(RoleMutationService::class);
     $roleMutationService->shouldReceive('isRoleTbClass')->andReturnUsing(fn (string $tbClass): bool => $tbClass === 'http://example.test/RolTb');
 
@@ -130,11 +130,17 @@ test('it cascades role and state projection rows only when no kernel remains', f
     $rows = [
         ['tb_uri' => 'role', 'tb_class' => 'http://example.test/RolTb'],
         ['tb_uri' => 'projection', 'tb_class' => 'http://example.test/ProjectieTb'],
+        ['tb_uri' => 'contact', 'tb_class' => 'http://example.test/ContactGegevens'],
+        ['tb_uri' => 'association', 'tb_class' => 'http://example.test/DataObjectAssociation'],
     ];
 
     expect($service->collectCascadeRowsWhenNoKernelRemains($rows, [], [
         'http://example.test/ProjectieTb' => ['is_state_projection' => true],
-    ]))->toBe($rows);
+    ]))->toBe([
+        ['tb_uri' => 'role', 'tb_class' => 'http://example.test/RolTb'],
+        ['tb_uri' => 'projection', 'tb_class' => 'http://example.test/ProjectieTb'],
+        ['tb_uri' => 'contact', 'tb_class' => 'http://example.test/ContactGegevens'],
+    ]);
 
     expect($service->collectCascadeRowsWhenNoKernelRemains([...$rows, [
         'tb_uri' => 'kernel',

@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, ref, watch } from 'vue';
 import { toestandSortRank } from '@/lib/toestandSort';
-import { start } from '@/routes/cases';
+import { consult, start } from '@/routes/cases';
 
 type CaseItem = {
   id: number;
@@ -50,7 +50,6 @@ type DossierItem = {
 };
 
 type Props = {
-  cases: CaseItem[];
   activeCase?: CaseItem | null;
   dossiers?: DossierItem[];
   followTargetCaseId?: number | null;
@@ -73,8 +72,7 @@ defineOptions({
 });
 
 const props = defineProps<Props>();
-const selectedCaseId = ref<number | null>(props.activeCase?.id ?? null);
-const hasSelection = computed(() => !!selectedCaseId.value);
+const hasSelection = computed(() => !!props.activeCase?.id);
 const isFollowContext = computed(() => !!props.activeCase?.id && !!props.followTargetCaseId && !!props.goUri);
 const pageTitle = computed(() => (
   isFollowContext.value
@@ -147,18 +145,6 @@ const goLinksHref = (goic: GoicItem) => {
 
   return `/raadplegen/go?${params.toString()}`;
 };
-
-watch(selectedCaseId, (value) => {
-  if (!value) {
-return;
-}
-
-  router.get('/raadplegen', {
-    case: value,
-    go: props.goUri ?? undefined,
-    follow_target_case: props.followTargetCaseId ?? undefined,
-  }, { preserveState: true, replace: true });
-});
 
 const isUri = (value: unknown): value is string =>
   typeof value === 'string' && (value.startsWith('http://') || value.startsWith('https://'));
@@ -961,9 +947,9 @@ watch(() => props.dossiers, () => {
           </Link>
           <Link
             class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30"
-            :href="start()"
+            :href="consult()"
           >
-            Terug naar Start
+            Andere Case Kiezen
           </Link>
         </div>
       </div>
@@ -971,23 +957,6 @@ watch(() => props.dossiers, () => {
 
     <div class="relative flex-1 rounded-2xl border border-sidebar-border/70 bg-white p-8 shadow-sm dark:border-sidebar-border dark:bg-gray-900">
       <div class="mx-auto max-w-5xl space-y-6">
-        <div v-if="!isFollowContext" class="rounded-xl border border-emerald-200/70 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-300/20 dark:bg-emerald-900/20 dark:text-emerald-100">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <div class="flex items-center gap-3">
-              <span class="font-medium">Case kiezen</span>
-              <select
-                v-model="selectedCaseId"
-                class="h-10 rounded-lg border border-emerald-200 bg-white px-3 text-sm text-emerald-900 shadow-sm outline-none transition focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100"
-              >
-                <option disabled value="">Kies een case</option>
-                <option v-for="item in cases" :key="item.id" :value="item.id">
-                  {{ item.case_soort_naam }} ({{ item.case_soort_code }}) · #{{ item.id }}
-                </option>
-              </select>
-            </div>
-          </div>
-        </div>
-
         <div v-if="!hasSelection" class="rounded-xl border border-dashed border-gray-300 p-8 text-center text-gray-600 dark:border-gray-700 dark:text-gray-300">
           Kies een case om dossiers en inhoud te bekijken.
         </div>

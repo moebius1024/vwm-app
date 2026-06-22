@@ -118,7 +118,13 @@
           </div>
 
           <div class="grid gap-4 md:grid-cols-2">
-            <div v-for="veld in object.velden" :key="veld.property" class="flex flex-col gap-0.5">
+            <fieldset
+              v-for="veld in object.velden"
+              :key="veld.property"
+              class="m-0 flex min-w-0 flex-col gap-0.5 border-0 p-0 transition-opacity"
+              :class="{ 'opacity-50': !isFieldEnabled(object, veld) }"
+              :disabled="!isFieldEnabled(object, veld)"
+            >
               <label class="text-sm font-medium text-gray-700 dark:text-gray-300">
                 {{ veld.label }}
               </label>
@@ -134,7 +140,7 @@
                     placeholder="Plak de URI van het object"
                     :data-field-key="fieldErrorKey(object, veld.property)"
                     class="h-10 flex-1 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                    :required="veld.required"
+                    :required="isFieldRequired(object, veld)"
                   >
                   <button
                     v-if="(object.formData[veld.property] as string[]).length > 1"
@@ -159,7 +165,7 @@
                   :data-field-key="fieldErrorKey(object, veld.property)"
                   class="h-10 w-full min-w-0 overflow-hidden rounded-lg border border-gray-300 bg-white px-2 text-sm text-gray-900 shadow-sm outline-none transition file:mr-2 file:max-w-full file:overflow-hidden file:text-ellipsis file:whitespace-nowrap focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                   @change="onFileSelected($event, object, veld)"
-                  :required="veld.required"
+                  :required="isFieldRequired(object, veld)"
                   :disabled="isFileFieldLockedForMutation(object)"
                 >
                 <p v-if="isFileFieldLockedForMutation(object)" class="text-xs text-amber-700 dark:text-amber-200">
@@ -181,7 +187,7 @@
                 rows="4"
                 :data-field-key="fieldErrorKey(object, veld.property)"
                 class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
-                :required="veld.required"
+                :required="isFieldRequired(object, veld)"
               ></textarea>
               <select
                 v-else-if="isGoicLookupField(veld)"
@@ -189,7 +195,7 @@
                 :data-field-key="fieldErrorKey(object, veld.property)"
                 class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 :class="fieldWidthClass(veld)"
-                :required="veld.required"
+                :required="isFieldRequired(object, veld)"
                 @change="delete fieldErrors[fieldErrorKey(object, veld.property)]"
               >
                 <option value="" disabled>Kies...</option>
@@ -207,7 +213,7 @@
                 :data-field-key="fieldErrorKey(object, veld.property)"
                 class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 :class="fieldWidthClass(veld)"
-                :required="veld.required"
+                :required="isFieldRequired(object, veld)"
                 @change="onFieldInput(object, veld)"
               >
                 <option value="" disabled>Kies...</option>
@@ -225,7 +231,7 @@
                 :class="[fieldWidthClass(veld), veld.type === 'text' ? 'text-xs' : '']"
                 @input="onFieldInput(object, veld)"
                 @blur="onFieldBlur(object, veld)"
-                :required="veld.required"
+                :required="isFieldRequired(object, veld)"
               >
               <datalist
                 v-if="fieldLookupListId(object, veld)"
@@ -240,7 +246,7 @@
               <p v-if="!activeRoleForSelection && fieldErrors[fieldErrorKey(object, veld.property)]" class="text-xs text-red-600 dark:text-red-300">
                 {{ fieldErrors[fieldErrorKey(object, veld.property)] }}
               </p>
-            </div>
+            </fieldset>
           </div>
 
         </div>
@@ -341,6 +347,11 @@ interface Veld {
   required: boolean;
   field_width?: string | null;
   options?: string[];
+  enabled_when?: {
+    property: string;
+    value: string;
+  } | null;
+  required_when_enabled?: boolean;
   lookup?: {
     endpoint?: string | null;
     query_param?: string | null;
@@ -751,8 +762,29 @@ const triggerMetadataLookup = async (object: ObjectBlock, veld: Veld, triggerTyp
 
 const onFieldInput = (object: ObjectBlock, veld: Veld) => {
   delete fieldErrors.value[fieldErrorKey(object, veld.property)];
+  object.velden.forEach((dependentField) => {
+    if (dependentField.enabled_when?.property !== veld.property || isFieldEnabled(object, dependentField)) {
+      return;
+    }
+
+    object.formData[dependentField.property] = dependentField.type === 'multi-uri' ? [''] : '';
+    delete fieldErrors.value[fieldErrorKey(object, dependentField.property)];
+  });
   void triggerMetadataLookup(object, veld, 'input');
 };
+
+const isFieldEnabled = (object: ObjectBlock, veld: Veld) => {
+  if (!veld.enabled_when) {
+    return true;
+  }
+
+  const sourceValue = object.formData[veld.enabled_when.property];
+
+  return !Array.isArray(sourceValue) && String(sourceValue ?? '') === veld.enabled_when.value;
+};
+
+const isFieldRequired = (object: ObjectBlock, veld: Veld) =>
+  veld.required || (!!veld.required_when_enabled && isFieldEnabled(object, veld));
 
 const onFieldBlur = (object: ObjectBlock, veld: Veld) => {
   void triggerMetadataLookup(object, veld, 'blur');
@@ -1363,7 +1395,7 @@ const validateBeforeSubmit = () => {
 
   objects.value.forEach((object) => {
     object.velden.forEach((veld) => {
-      if (!veld.required) {
+      if (!isFieldEnabled(object, veld) || !isFieldRequired(object, veld)) {
         return;
       }
 
@@ -1586,7 +1618,13 @@ return;
         target_class: object.targetClass,
         attach_to_existing: object.attachToExisting,
         existing_goic_id: object.existingGoicId ? Number(object.existingGoicId) : null,
-        data: object.formData,
+        data: Object.fromEntries(
+          Object.entries(object.formData).filter(([property]) => {
+            const veld = object.velden.find((item) => item.property === property);
+
+            return !veld || isFieldEnabled(object, veld);
+          }),
+        ),
         data_types: object.dataTypes,
       })),
       roles: {
