@@ -322,8 +322,13 @@
   <http://www.w3.org/2000/01/rdf-schema#label> "Voertuig";
   <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#Beschrijving> .
 
-<http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier> a <http://www.w3.org/2002/07/owl#Class>;
-  <http://www.w3.org/2000/01/rdf-schema#label> "VerkeersincidentDossier" .
+<http://ontologie.politie.nl/def/vwm#Dossier> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Dossier" .
+
+<http://ontologie.politie.nl/def/vwm#vereistIncidentInDossier> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#Dossier>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#boolean>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "vereistIncidentInDossier" .
 
 <http://ontologie.politie.nl/def/vwm#beschrijftClass> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;

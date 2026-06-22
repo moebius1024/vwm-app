@@ -7,12 +7,12 @@ use Illuminate\Support\Facades\DB;
 
 uses(RefreshDatabase::class);
 
-it('stores dossier with generic dossier typing only', function () {
+it('copies incident requirement from case soort to initial dossier and RDF', function () {
     $user = User::factory()->create();
     grantCaseCreateRoleToUser($user->id);
 
     $capturedSparql = null;
-    $mock = \Mockery::mock(GraphService::class);
+    $mock = Mockery::mock(GraphService::class);
     $mock->shouldReceive('update')
         ->once()
         ->andReturnUsing(function (string $sparql) use (&$capturedSparql) {
@@ -30,15 +30,19 @@ it('stores dossier with generic dossier typing only', function () {
 
     expect($capturedSparql)->not->toBeNull();
     expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#Dossier');
+    expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#vereistIncidentInDossier');
     expect($capturedSparql)->not->toContain('http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier');
+
+    $dossier = DB::table('dossiers')->latest('id')->first(['vereist_incident_in_dossier']);
+    expect((bool) $dossier->vereist_incident_in_dossier)->toBeTrue();
 });
 
-it('adds configured dossier rdf types from sqlite mapping', function () {
+it('ignores configured dossier rdf types from sqlite mapping for new cases', function () {
     $user = User::factory()->create();
     grantCaseCreateRoleToUser($user->id);
 
     $capturedSparql = null;
-    $mock = \Mockery::mock(GraphService::class);
+    $mock = Mockery::mock(GraphService::class);
     $mock->shouldReceive('update')
         ->once()
         ->andReturnUsing(function (string $sparql) use (&$capturedSparql) {
@@ -63,7 +67,40 @@ it('adds configured dossier rdf types from sqlite mapping', function () {
 
     expect($capturedSparql)->not->toBeNull();
     expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#Dossier');
-    expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier');
+    expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#vereistIncidentInDossier');
+    expect($capturedSparql)->not->toContain('http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier');
+});
+
+it('does not add incident requirement when case soort does not require it', function () {
+    $user = User::factory()->create();
+    grantCaseCreateRoleToUser($user->id);
+
+    $caseSoortId = (int) DB::table('case_soorten')->value('id');
+    DB::table('case_soorten')
+        ->where('id', $caseSoortId)
+        ->update(['vereist_incident_in_dossier' => false]);
+
+    $capturedSparql = null;
+    $mock = Mockery::mock(GraphService::class);
+    $mock->shouldReceive('update')
+        ->once()
+        ->andReturnUsing(function (string $sparql) use (&$capturedSparql) {
+            $capturedSparql = $sparql;
+
+            return true;
+        });
+    app()->instance(GraphService::class, $mock);
+
+    $this->actingAs($user)
+        ->post(route('cases.store'), ['case_soort_id' => $caseSoortId])
+        ->assertRedirect();
+
+    expect($capturedSparql)->not->toBeNull();
+    expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#Dossier');
+    expect($capturedSparql)->not->toContain('http://ontologie.politie.nl/def/vwm#vereistIncidentInDossier');
+
+    $dossier = DB::table('dossiers')->latest('id')->first(['vereist_incident_in_dossier']);
+    expect((bool) $dossier->vereist_incident_in_dossier)->toBeFalse();
 });
 
 function grantCaseCreateRoleToUser(int $userId): void
@@ -115,6 +152,7 @@ function grantCaseCreateRoleToUser(int $userId): void
         'naam' => 'Verkeersincident',
         'code' => 'VI-001',
         'rechtsgrond_id' => $rechtsgrondId,
+        'vereist_incident_in_dossier' => true,
         'created_at' => $now,
         'updated_at' => $now,
     ]);

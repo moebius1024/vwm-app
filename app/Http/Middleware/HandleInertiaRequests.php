@@ -2,11 +2,14 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\BeheerAccessService;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
 class HandleInertiaRequests extends Middleware
 {
+    public function __construct(private readonly BeheerAccessService $beheerAccessService) {}
+
     /**
      * The root template that's loaded on the first page visit.
      *
@@ -35,6 +38,8 @@ class HandleInertiaRequests extends Middleware
      */
     public function share(Request $request): array
     {
+        $userId = $request->user()?->id;
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
@@ -44,6 +49,9 @@ class HandleInertiaRequests extends Middleware
             ],
             'auth' => [
                 'user' => $request->user(),
+                'can' => [
+                    'beheer' => fn () => $this->beheerAccessService->userHasBeheerAccess(is_int($userId) ? $userId : null),
+                ],
             ],
             'sidebarOpen' => ! $request->hasCookie('sidebar_state') || $request->cookie('sidebar_state') === 'true',
         ];

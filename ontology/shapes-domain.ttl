@@ -225,26 +225,29 @@ vwm:PersoonSignalementShape a sh:NodeShape ;
     """ ;
   ] .
 
-vwm:VerkeersincidentDossierMaxOneIncidentShape a sh:NodeShape ;
-  sh:targetClass vwm:VerkeersincidentDossier ;
+vwm:DossierExactOneIncidentShape a sh:NodeShape ;
+  sh:targetClass vwm:Dossier ;
   sh:sparql [
     a sh:SPARQLConstraint ;
-    sh:message "Binnen een Verkeersincident-dossier is maximaal 1 Incident GOIC toegestaan." ;
+    sh:message "Voor dit dossier is exact 1 actief Incident GOIC verplicht." ;
     sh:select """
       PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
       PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
       SELECT $this
       WHERE {
+        $this vwm:vereistIncidentInDossier true .
         {
           SELECT $this (COUNT(DISTINCT ?goic) AS ?incidentCount)
           WHERE {
-            ?goic vwm:hoortBijDossier $this .
-            ?tb a vwm:IncidentBeschrijving ;
-                vwm:beschrijftGOIC ?goic .
-            FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+            OPTIONAL {
+              ?goic vwm:hoortBijDossier $this .
+              ?tb a vwm:IncidentBeschrijving ;
+                  vwm:beschrijftGOIC ?goic .
+              FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+            }
           }
           GROUP BY $this
-          HAVING (?incidentCount > 1)
+          HAVING (?incidentCount != 1)
         }
       }
     """ ;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
-import { BookOpen, FolderGit2, LayoutGrid, Search } from 'lucide-vue-next';
+import { Link, usePage } from '@inertiajs/vue3';
+import { BookOpen, FolderGit2, LayoutGrid, Search, ShieldCheck } from 'lucide-vue-next';
+import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
 import NavMain from '@/components/NavMain.vue';
@@ -14,21 +15,36 @@ import {
     SidebarMenuButton,
     SidebarMenuItem,
 } from '@/components/ui/sidebar';
+import { index as beheerIndex } from '@/routes/beheer';
 import { consult, start } from '@/routes/cases';
 import type { NavItem } from '@/types';
 
-const mainNavItems: NavItem[] = [
-    {
-        title: 'Start',
-        href: start(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Raadplegen',
-        href: consult(),
-        icon: Search,
-    },
-];
+const page = usePage();
+
+const mainNavItems = computed<NavItem[]>(() => {
+    const items: NavItem[] = [
+        {
+            title: 'Start',
+            href: start(),
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Raadplegen',
+            href: consult(),
+            icon: Search,
+        },
+    ];
+
+    if (page.props.auth.can.beheer) {
+        items.push({
+            title: 'Beheer',
+            href: beheerIndex(),
+            icon: ShieldCheck,
+        });
+    }
+
+    return items;
+});
 
 const footerNavItems: NavItem[] = [
     {

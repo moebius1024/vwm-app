@@ -4,10 +4,11 @@ use App\Models\User;
 use App\Services\GraphService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 
 uses(RefreshDatabase::class);
 
-it('creates an additional dossier within an authorized case', function () {
+it('creates an additional dossier with generic dossier typing only', function () {
     $user = User::factory()->create();
     [$caseId, $caseSoortId] = seedAuthorizedCaseForUser($user->id);
 
@@ -20,7 +21,7 @@ it('creates an additional dossier within an authorized case', function () {
     ]);
 
     $capturedSparql = null;
-    $mock = \Mockery::mock(GraphService::class);
+    $mock = Mockery::mock(GraphService::class);
     $mock->shouldReceive('update')
         ->once()
         ->andReturnUsing(function (string $sparql) use (&$capturedSparql) {
@@ -42,7 +43,11 @@ it('creates an additional dossier within an authorized case', function () {
     expect($afterCount)->toBe($beforeCount + 1);
     expect(DB::table('dossiers')->where('case_id', $caseId)->where('naam', 'Subdossier Getuigen')->exists())->toBeTrue();
     expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#Dossier');
-    expect($capturedSparql)->toContain('http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier');
+    expect($capturedSparql)->not->toContain('http://ontologie.politie.nl/def/vwm#vereistIncidentInDossier');
+    expect($capturedSparql)->not->toContain('http://ontologie.politie.nl/def/vwm#VerkeersincidentDossier');
+
+    $dossier = DB::table('dossiers')->where('case_id', $caseId)->where('naam', 'Subdossier Getuigen')->first(['vereist_incident_in_dossier']);
+    expect((bool) $dossier->vereist_incident_in_dossier)->toBeFalse();
 });
 
 it('forbids creating dossier in a case that user does not own', function () {
@@ -50,7 +55,7 @@ it('forbids creating dossier in a case that user does not own', function () {
     [$caseId] = seedAuthorizedCaseForUser($owner->id);
     $otherUser = User::factory()->create();
 
-    $mock = \Mockery::mock(GraphService::class);
+    $mock = Mockery::mock(GraphService::class);
     $mock->shouldReceive('update')->never();
     app()->instance(GraphService::class, $mock);
 
@@ -66,7 +71,7 @@ it('creates an additional dossier with a parent dossier when parent_id is provid
     [$caseId] = seedAuthorizedCaseForUser($user->id);
     $parentId = (int) DB::table('dossiers')->where('case_id', $caseId)->value('id');
 
-    $mock = \Mockery::mock(GraphService::class);
+    $mock = Mockery::mock(GraphService::class);
     $mock->shouldReceive('update')->once()->andReturn(true);
     app()->instance(GraphService::class, $mock);
 
@@ -134,6 +139,7 @@ function seedAuthorizedCaseForUser(int $userId): array
         'naam' => 'Verkeersincident',
         'code' => 'VI-001',
         'rechtsgrond_id' => $rechtsgrondId,
+        'vereist_incident_in_dossier' => true,
         'created_at' => $now,
         'updated_at' => $now,
     ]);
@@ -148,7 +154,7 @@ function seedAuthorizedCaseForUser(int $userId): array
     ]);
 
     $caseId = DB::table('cases')->insertGetId([
-        'uuid' => (string) \Illuminate\Support\Str::uuid(),
+        'uuid' => (string) Str::uuid(),
         'case_soort_id' => $caseSoortId,
         'user_id' => $userId,
         'created_at' => $now,
@@ -156,11 +162,12 @@ function seedAuthorizedCaseForUser(int $userId): array
     ]);
 
     DB::table('dossiers')->insert([
-        'uuid' => (string) \Illuminate\Support\Str::uuid(),
-        'rdf_uri' => 'http://vwm.voorbeeld.nl/data/dossier/'.\Illuminate\Support\Str::uuid(),
+        'uuid' => (string) Str::uuid(),
+        'rdf_uri' => 'http://vwm.voorbeeld.nl/data/dossier/'.Str::uuid(),
         'case_id' => $caseId,
         'parent_id' => null,
         'naam' => 'Bestaand dossier',
+        'vereist_incident_in_dossier' => true,
         'created_at' => $now,
         'updated_at' => $now,
     ]);

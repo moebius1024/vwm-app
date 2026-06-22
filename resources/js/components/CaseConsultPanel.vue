@@ -24,6 +24,7 @@ type GoicItem = {
   toestanden: ToestandItem[];
   follow_info?: {
     is_followed?: boolean;
+    association_uri?: string | null;
     source_goic_uri?: string | null;
     source_goic_id?: number | null;
     source_case_id?: number | null;
@@ -54,6 +55,13 @@ type Props = {
   } | null;
 };
 
+type TbClassCapabilities = {
+  is_state_projection?: boolean;
+  is_signalement?: boolean;
+  is_beschrijving?: boolean;
+  is_role_beschrijving?: boolean;
+};
+
 const props = defineProps<Props>();
 const emit = defineEmits<{
   (e: 'select-mutate', target: {
@@ -78,8 +86,10 @@ const classOrder = ref<Record<string, number>>({});
 const classCrudMap = ref<Record<string, string>>({});
 const sjabloonCrudMap = ref<Record<string, string>>({});
 const sjabloonOrderMap = ref<Record<string, number>>({});
+const tbClassCapabilitiesMap = ref<Record<string, TbClassCapabilities>>({});
 const roleCrudMap = ref<Record<string, string>>({});
 const roleCrudByTypeMap = ref<Record<string, string>>({});
+const unfollowBusyGoicId = ref<number | null>(null);
 
 const hasLinkedGoics = (goic: GoicItem) =>
   !!goic.go_uri && (goic.linked_goic_count ?? 0) > 1;
@@ -533,6 +543,7 @@ const loadSjabloonOrder = async () => {
     classCrudMap.value = {};
     sjabloonCrudMap.value = {};
     sjabloonOrderMap.value = {};
+    tbClassCapabilitiesMap.value = {};
     roleCrudMap.value = {};
     roleCrudByTypeMap.value = {};
 
@@ -547,9 +558,10 @@ const loadSjabloonOrder = async () => {
     const crudByClass: Record<string, string> = {};
     const crudBySjabloon: Record<string, string> = {};
     const orderBySjabloon: Record<string, number> = {};
+    const capabilitiesBySjabloon: Record<string, TbClassCapabilities> = {};
     const crudByRole: Record<string, string> = {};
     const crudByRoleType: Record<string, string> = {};
-    allowed.forEach((item: { target_class?: string | null; volgorde?: number }, index: number) => {
+    allowed.forEach((item: { target_class?: string | null; volgorde?: number; capabilities?: TbClassCapabilities | null }, index: number) => {
       if (!item.target_class) {
 return;
 }
@@ -561,6 +573,7 @@ return;
       if (uri) {
         crudBySjabloon[uri] = String((item as { crud_flags?: string | null }).crud_flags ?? 'CRUD').toUpperCase();
         orderBySjabloon[uri] = item.volgorde ?? index + 1;
+        capabilitiesBySjabloon[uri] = item.capabilities ?? {};
       }
     });
     allowedRoles.forEach((item: { tb_class?: string | null; role_type?: string | null; crud_flags?: string | null }) => {
@@ -578,6 +591,7 @@ return;
     classCrudMap.value = crudByClass;
     sjabloonCrudMap.value = crudBySjabloon;
     sjabloonOrderMap.value = orderBySjabloon;
+    tbClassCapabilitiesMap.value = capabilitiesBySjabloon;
     roleCrudMap.value = crudByRole;
     roleCrudByTypeMap.value = crudByRoleType;
   } catch (error) {
@@ -586,6 +600,7 @@ return;
     classCrudMap.value = {};
     sjabloonCrudMap.value = {};
     sjabloonOrderMap.value = {};
+    tbClassCapabilitiesMap.value = {};
     roleCrudMap.value = {};
     roleCrudByTypeMap.value = {};
   }
@@ -863,9 +878,9 @@ const deleteRoleToestand = async (goic: GoicItem, tb: ToestandItem) => {
 };
 
 const isToestandsWeergaveToestand = (tb: ToestandItem) => {
-  const marker = `${tb.tb_class ?? ''} ${tb.sjabloon_uri ?? ''}`.toLowerCase();
+  const key = tb.tb_class ?? tb.sjabloon_uri ?? '';
 
-  return marker.includes('toestandsweergave');
+  return !!tbClassCapabilitiesMap.value[key]?.is_state_projection;
 };
 
 const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
@@ -897,6 +912,40 @@ const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
     if (typeof window !== 'undefined') {
       window.alert('Verwijderen mislukt. Zie console voor details.');
     }
+  }
+};
+
+const unfollowGoic = async (goic: GoicItem) => {
+  const associationUri = goic.follow_info?.association_uri;
+
+  if (!props.caseId || !associationUri) {
+    return;
+  }
+
+  const ok = typeof window !== 'undefined'
+    ? window.confirm('Registratie niet meer volgen?\n\nDe volgrelatie wordt logisch beëindigd en blijft auditbaar.')
+    : false;
+
+  if (!ok) {
+    return;
+  }
+
+  unfollowBusyGoicId.value = goic.id;
+
+  try {
+    await axios.post(apiUrl('/api/goic/ontvolg'), {
+      case_id: props.caseId,
+      association_uri: associationUri,
+    });
+    emit('mutation-changed');
+  } catch (error) {
+    console.error('Fout bij niet meer volgen van registratie:', error);
+
+    if (typeof window !== 'undefined') {
+      window.alert('Niet meer volgen mislukt. Zie console voor details.');
+    }
+  } finally {
+    unfollowBusyGoicId.value = null;
   }
 };
 
@@ -1194,9 +1243,20 @@ watch(() => props.transactieSoortId, () => {
                 v-if="goic.follow_info?.is_followed && visibleFollowSourceEntries(goic).length"
                 class="rounded-lg border border-indigo-200 bg-indigo-50/60 p-3 text-xs text-indigo-900 dark:border-indigo-400/30 dark:bg-indigo-900/20 dark:text-indigo-100"
               >
-                <div class="font-semibold">
-                  {{ followedRegistrationTitle(goic) }} #{{ goic.follow_info.source_goic_id ?? '?' }}
-                  <span v-if="goic.follow_info.source_case_id">in case #{{ goic.follow_info.source_case_id }}</span>
+                <div class="flex flex-wrap items-start justify-between gap-2">
+                  <div class="font-semibold">
+                    {{ followedRegistrationTitle(goic) }} #{{ goic.follow_info.source_goic_id ?? '?' }}
+                    <span v-if="goic.follow_info.source_case_id">in case #{{ goic.follow_info.source_case_id }}</span>
+                  </div>
+                  <button
+                    v-if="goic.follow_info.association_uri"
+                    type="button"
+                    class="inline-flex items-center rounded-md border border-rose-200 bg-white px-2 py-0.5 text-[11px] font-semibold text-rose-700 transition hover:bg-rose-50 disabled:cursor-not-allowed disabled:opacity-60 dark:border-rose-400/40 dark:bg-gray-900 dark:text-rose-200 dark:hover:bg-rose-900/20"
+                    :disabled="unfollowBusyGoicId === goic.id"
+                    @click="unfollowGoic(goic)"
+                  >
+                    {{ unfollowBusyGoicId === goic.id ? 'Bezig...' : 'Niet meer volgen' }}
+                  </button>
                 </div>
                 <div class="mt-2 text-[11px] opacity-90">Alleen raadplegen: deze beschrijving komt uit de gevolgde Registratie.</div>
                 <div class="mt-2 rounded border border-indigo-200 bg-white p-2 dark:border-indigo-400/30 dark:bg-gray-900">
