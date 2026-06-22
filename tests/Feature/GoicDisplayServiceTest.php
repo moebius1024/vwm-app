@@ -44,6 +44,16 @@ function createGoicDisplayCase(User $user): object
     ];
 }
 
+test('goic display endpoint requires at least one uri', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->postJson('/api/goic/displays', ['uris' => []])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('uris');
+});
+
 test('it resolves a local goic display label from recent object mutation data', function () {
     $user = User::factory()->create();
     $case = createGoicDisplayCase($user);

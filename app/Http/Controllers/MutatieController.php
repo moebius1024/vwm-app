@@ -2,40 +2,29 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\FollowGoicRequest;
+use App\Http\Requests\ResolveGoicDisplaysRequest;
 use App\Http\Requests\StoreMutatieRequest;
+use App\Http\Requests\UnfollowGoicRequest;
 use App\Services\GoicDisplayService;
 use App\Services\GoicFollowAction;
 use App\Services\GoicUnfollowAction;
 use App\Services\StoreMutationAction;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Http\Request;
 
 class MutatieController extends Controller
 {
-    protected GoicDisplayService $goicDisplayService;
-
-    protected GoicFollowAction $goicFollowAction;
-
-    protected GoicUnfollowAction $goicUnfollowAction;
-
-    protected StoreMutationAction $storeMutationAction;
-
     public function __construct(
-        GoicDisplayService $goicDisplayService,
-        GoicFollowAction $goicFollowAction,
-        GoicUnfollowAction $goicUnfollowAction,
-        StoreMutationAction $storeMutationAction,
-    ) {
-        $this->goicDisplayService = $goicDisplayService;
-        $this->goicFollowAction = $goicFollowAction;
-        $this->goicUnfollowAction = $goicUnfollowAction;
-        $this->storeMutationAction = $storeMutationAction;
-    }
+        protected GoicDisplayService $goicDisplayService,
+        protected GoicFollowAction $goicFollowAction,
+        protected GoicUnfollowAction $goicUnfollowAction,
+        protected StoreMutationAction $storeMutationAction,
+    ) {}
 
     /**
      * Slaat de formulierdata op in zowel SQLite (audit) als GraphDB (triples).
      */
-    public function storeMutatie(StoreMutatieRequest $request)
+    public function storeMutatie(StoreMutatieRequest $request): JsonResponse
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
@@ -52,18 +41,14 @@ class MutatieController extends Controller
      * 3) leg DataObjectAssociation vast
      * 4) leg stap 1 en 3 vast als object_mutaties in SQLite
      */
-    public function volgGoic(Request $request)
+    public function volgGoic(FollowGoicRequest $request): JsonResponse
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
             return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
-        $validated = $request->validate([
-            'case_id' => 'required|integer',
-        ]);
-
-        $result = $this->goicFollowAction->execute($request->all(), (int) $validated['case_id'], $userId);
+        $result = $this->goicFollowAction->execute($request->followInput(), $request->caseId(), $userId);
         if (isset($result['log'])) {
             $this->logFollowWarning(
                 $result['log']['reason'],
@@ -76,18 +61,14 @@ class MutatieController extends Controller
         return $this->actionResponse($result);
     }
 
-    public function ontvolgGoic(Request $request)
+    public function ontvolgGoic(UnfollowGoicRequest $request): JsonResponse
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
             return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
-        $validated = $request->validate([
-            'case_id' => 'required|integer',
-        ]);
-
-        $result = $this->goicUnfollowAction->execute($request->all(), (int) $validated['case_id'], $userId);
+        $result = $this->goicUnfollowAction->execute($request->unfollowInput(), $request->caseId(), $userId);
 
         return $this->actionResponse($result);
     }
@@ -96,20 +77,15 @@ class MutatieController extends Controller
      * Resolveer leesbare labels voor GOIC-URI's (ook buiten de actieve case),
      * zodat verwijzingen zoals heeftVoertuig het kenteken kunnen tonen.
      */
-    public function resolveGoicDisplays(Request $request)
+    public function resolveGoicDisplays(ResolveGoicDisplaysRequest $request): JsonResponse
     {
         $userId = $request->user()?->id;
         if (! is_int($userId)) {
             return $this->jsonError('Niet geauthenticeerd.', 401);
         }
 
-        $validated = $request->validate([
-            'uris' => 'required|array|min:1',
-            'uris.*' => 'required|string',
-        ]);
-
         return response()->json([
-            'labels' => $this->goicDisplayService->resolveLabels($validated['uris'], $userId),
+            'labels' => $this->goicDisplayService->resolveLabels($request->uris(), $userId),
         ]);
     }
 

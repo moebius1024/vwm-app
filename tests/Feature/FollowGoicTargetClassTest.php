@@ -75,6 +75,18 @@ function createFollowGoicFixture(User $user): array
     ];
 }
 
+test('volg goic requires a case id', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->postJson('/api/goic/volg', [
+            'bron_goic_uri' => 'http://example.test/goic/source',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('case_id');
+});
+
 test('volg goic copies the source target class to the new goic', function () {
     $user = User::factory()->create();
     $fixture = createFollowGoicFixture($user);
@@ -432,6 +444,18 @@ test('ontvolg goic invalidates the data object association', function () {
 
     expect($association?->invalidated_at)->not->toBeNull()
         ->and($deleteMutationData)->toContain('beeindig_volg_goic');
+});
+
+test('ontvolg goic requires a case id', function () {
+    $user = User::factory()->create();
+
+    $this
+        ->actingAs($user)
+        ->postJson('/api/goic/ontvolg', [
+            'association_uri' => 'http://example.test/association/followed',
+        ])
+        ->assertUnprocessable()
+        ->assertJsonValidationErrors('case_id');
 });
 
 test('ontvolg goic rejects invalid association uri values with reason code', function () {
