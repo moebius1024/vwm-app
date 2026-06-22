@@ -65,6 +65,7 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
   sh:property [
     sh:path dpm:legalForm ;
     sh:datatype xsd:string ;
+    sh:in ( "NV" "BV" "anders" ) ;
     sh:minCount 1 ;
     sh:order 2 ;
   ] ;
@@ -72,7 +73,29 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
     sh:path dpm:otherLegalForm ;
     sh:datatype xsd:string ;
     sh:order 3 ;
-  ] .
+  ] ;
+  sh:or (
+    [
+      sh:property [
+        sh:path dpm:legalForm ;
+        sh:in ( "NV" "BV" ) ;
+      ] ;
+      sh:property [
+        sh:path dpm:otherLegalForm ;
+        sh:maxCount 0 ;
+      ] ;
+    ]
+    [
+      sh:property [
+        sh:path dpm:legalForm ;
+        sh:hasValue "anders" ;
+      ] ;
+      sh:property [
+        sh:path dpm:otherLegalForm ;
+        sh:minCount 1 ;
+      ] ;
+    ]
+  ) .
 
 vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:VoertuigBeschrijving ;

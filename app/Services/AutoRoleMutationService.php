@@ -183,14 +183,13 @@ class AutoRoleMutationService
             return [];
         }
 
-        return array_values(array_filter($remainingRows, function (array $row) use ($roleShapeRules, $tbCapabilities): bool {
+        return array_values(array_filter($remainingRows, function (array $row): bool {
             $tbClass = (string) ($row['tb_class'] ?? '');
             if ($tbClass === '') {
                 return false;
             }
 
-            return $this->roleMutationService->isRoleTbClass($tbClass, $roleShapeRules)
-                || $this->mutationTargetResolver->tbClassCapabilityEnabled($tbClass, $tbCapabilities, 'is_state_projection');
+            return ! str_contains(strtolower($tbClass), 'dataobjectassociation');
         }));
     }
 

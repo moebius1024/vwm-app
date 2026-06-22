@@ -11,6 +11,15 @@ vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
   ui:buttonLabelRegister "Persoon" ;
   ui:buttonLabelAttach "PersoonBeschrijving" .
 
+vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:OndernemingsBeschrijving ;
+  sh:property [
+    sh:path dpm:otherLegalForm ;
+    ui:enabledWhenProperty dpm:legalForm ;
+    ui:enabledWhenValue "anders" ;
+    ui:requiredWhenEnabled true ;
+  ] .
+
 vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:VoertuigBeschrijving ;
   sh:property [

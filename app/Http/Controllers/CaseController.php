@@ -17,6 +17,11 @@ class CaseController extends Controller
      */
     public function index(Request $request): Response
     {
+        return $this->caseSelection($request, 'start');
+    }
+
+    private function caseSelection(Request $request, string $mode): Response
+    {
         $userId = $request->user()->id;
         $this->purgeEmptyCasesForUser($userId);
         $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
@@ -72,6 +77,7 @@ class CaseController extends Controller
             'caseSoorten' => $caseSoorten,
             'cases' => $cases,
             'teamNaam' => $teamNaam,
+            'mode' => $mode,
         ]);
     }
 
@@ -285,6 +291,10 @@ class CaseController extends Controller
         $followTargetCaseId = $request->integer('follow_target_case');
         $goUri = trim((string) $request->query('go', ''));
 
+        if (! $caseId && ! $followTargetCaseId && $goUri === '') {
+            return $this->caseSelection($request, 'consult');
+        }
+
         $cases = DB::table('cases')
             ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
             ->where('cases.user_id', $userId)
@@ -314,7 +324,6 @@ class CaseController extends Controller
         }
 
         return Inertia::render('cases/Consult', [
-            'cases' => $cases,
             'activeCase' => $activeCase,
             'dossiers' => $dossiersOut,
             'followTargetCaseId' => $followTargetCaseId ?: null,

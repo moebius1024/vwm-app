@@ -18,14 +18,21 @@ class SjabloonMetadataService
 
     public function listSjablonen(): array
     {
+        $shapeGraphs = $this->shapeGraphValuesClause();
+
         $query = '
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            PREFIX sh: <http://www.w3.org/ns/shacl#>
 
-            SELECT ?sjabloon ?label ?targetClass
+            SELECT DISTINCT ?sjabloon ?label ?targetClass
             WHERE {
+                VALUES ?shapeGraph { '.$shapeGraphs.' }
+                GRAPH ?shapeGraph {
+                    ?shape sh:targetClass ?sjabloon .
+                }
                 GRAPH <'.self::ONTOLOGY_GRAPH.'> {
-                    ?sjabloon rdfs:subClassOf vwm:ToestandsBeschrijving .
+                    ?sjabloon rdfs:subClassOf+ vwm:ToestandsBeschrijving .
                     OPTIONAL { ?sjabloon rdfs:label ?label . }
                     OPTIONAL { ?sjabloon vwm:beschrijftClass ?targetClass . }
                 }
@@ -168,7 +175,7 @@ class SjabloonMetadataService
 
             SELECT ?sjabloonLabel ?label ?property ?datatype ?nodeKind ?order ?minCount ?targetClass
                    ?lookupEndpoint ?lookupQueryParam ?lookupSourceField ?lookupTrigger ?lookupDebounceMs ?lookupMinLength ?lookupClass
-                   ?enumValue ?fieldWidth
+                   ?enumValue ?fieldWidth ?enabledWhenProperty ?enabledWhenValue ?requiredWhenEnabled
             WHERE {
                 BIND(<{$sjabloonUri}> as ?sjabloon)
                 VALUES ?shapeGraph { {$shapeGraphs} }
@@ -188,6 +195,9 @@ class SjabloonMetadataService
                     OPTIONAL { ?propShape ui:lookupMinLength ?lookupMinLength . }
                     OPTIONAL { ?propShape ui:lookupClass ?lookupClass . }
                     OPTIONAL { ?propShape ui:fieldWidth ?fieldWidth . }
+                    OPTIONAL { ?propShape ui:enabledWhenProperty ?enabledWhenProperty . }
+                    OPTIONAL { ?propShape ui:enabledWhenValue ?enabledWhenValue . }
+                    OPTIONAL { ?propShape ui:requiredWhenEnabled ?requiredWhenEnabled . }
                     OPTIONAL {
                         ?propShape sh:in ?enumList .
                         ?enumList rdf:rest*/rdf:first ?enumValue .
@@ -255,6 +265,13 @@ class SjabloonMetadataService
                 'volgorde' => $order !== null ? (int) $order : 999,
                 'required' => $minCount > 0,
                 'field_width' => isset($row['fieldWidth']) && is_string($row['fieldWidth']) ? trim($row['fieldWidth']) : null,
+                'enabled_when' => isset($row['enabledWhenProperty'], $row['enabledWhenValue'])
+                    ? [
+                        'property' => $row['enabledWhenProperty'],
+                        'value' => $row['enabledWhenValue'],
+                    ]
+                    : null,
+                'required_when_enabled' => filter_var($row['requiredWhenEnabled'] ?? false, FILTER_VALIDATE_BOOLEAN),
                 'lookup' => $lookup,
                 'options' => isset($row['enumValue']) && $row['enumValue'] !== '' ? [$row['enumValue']] : [],
             ];
@@ -269,6 +286,7 @@ class SjabloonMetadataService
 
             if (! isset($veldenByProperty[$property])) {
                 $veldenByProperty[$property] = $veld;
+
                 continue;
             }
 
@@ -304,7 +322,14 @@ class SjabloonMetadataService
                 }
                 $replacement['lookup'] = empty(array_filter($replacementLookup, fn ($value) => $value !== null && $value !== '')) ? null : $replacementLookup;
 
+                foreach (['enabled_when', 'required_when_enabled'] as $metadataKey) {
+                    if (empty($replacement[$metadataKey]) && ! empty($current[$metadataKey])) {
+                        $replacement[$metadataKey] = $current[$metadataKey];
+                    }
+                }
+
                 $veldenByProperty[$property] = $replacement;
+
                 continue;
             }
 
@@ -317,6 +342,11 @@ class SjabloonMetadataService
             $candidateOptions = is_array($veld['options'] ?? null) ? $veld['options'] : [];
             $mergedOptions = array_values(array_unique(array_merge($currentOptions, $candidateOptions)));
             $veldenByProperty[$property]['options'] = $mergedOptions;
+            foreach (['enabled_when', 'required_when_enabled'] as $metadataKey) {
+                if (empty($veldenByProperty[$property][$metadataKey]) && ! empty($veld[$metadataKey])) {
+                    $veldenByProperty[$property][$metadataKey] = $veld[$metadataKey];
+                }
+            }
             if (
                 (! isset($veldenByProperty[$property]['field_width']) || $veldenByProperty[$property]['field_width'] === null || $veldenByProperty[$property]['field_width'] === '')
                 && isset($veld['field_width'])
