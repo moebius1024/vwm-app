@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
@@ -19,8 +18,9 @@ class StateDeletionService
     /**
      * @param  array<string, mixed>  $base
      * @param  array<string, array<string, mixed>>  $roleShapeRules
+     * @return array{status:int,payload:array<string,mixed>}
      */
-    public function delete(Request $request, array $base, int $dossierId, int $userId, array $roleShapeRules): JsonResponse
+    public function delete(Request $request, array $base, int $dossierId, int $userId, array $roleShapeRules): array
     {
         $payload = $request->validate([
             'delete_type' => 'required|string|in:role,toestand',
@@ -48,20 +48,20 @@ class StateDeletionService
             ]);
 
         if (! $targetRow || ! is_string($targetRow->tb_uri) || $targetRow->tb_uri === '') {
-            return response()->json(['error' => 'Doel voor verwijderen niet gevonden.'], 422);
+            return $this->result(['error' => 'Doel voor verwijderen niet gevonden.'], 422);
         }
 
         $deleteType = (string) ($payload['delete_type'] ?? '');
         if ($deleteType === 'role') {
             if (! $this->roleMutationService->isRoleDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
-                return response()->json(['error' => 'Verwijderen niet toegestaan voor deze rol in deze transactie.'], 422);
+                return $this->result(['error' => 'Verwijderen niet toegestaan voor deze rol in deze transactie.'], 422);
             }
         } else {
             if ($this->roleMutationService->isRoleTbClass((string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
-                return response()->json(['error' => 'Gebruik rol-verwijderen voor roltoestanden.'], 422);
+                return $this->result(['error' => 'Gebruik rol-verwijderen voor roltoestanden.'], 422);
             }
             if (! $this->isClassDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''))) {
-                return response()->json(['error' => 'Verwijderen niet toegestaan voor dit sjabloon in deze transactie.'], 422);
+                return $this->result(['error' => 'Verwijderen niet toegestaan voor dit sjabloon in deze transactie.'], 422);
             }
         }
 
@@ -185,7 +185,7 @@ class StateDeletionService
 
             DB::commit();
 
-            return response()->json([
+            return $this->result([
                 'ok' => true,
                 'mode' => 'delete',
                 'message' => $deleteType === 'role' ? 'Rol verwijderd.' : 'Toestand verwijderd.',
@@ -193,11 +193,23 @@ class StateDeletionService
         } catch (\Throwable $e) {
             DB::rollBack();
 
-            return response()->json([
+            return $this->result([
                 'error' => 'Verwijderen mislukt.',
                 'details' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{status:int,payload:array<string,mixed>}
+     */
+    private function result(array $payload, int $status = 200): array
+    {
+        return [
+            'status' => $status,
+            'payload' => $payload,
+        ];
     }
 
     /**

@@ -3,7 +3,6 @@
 namespace App\Services;
 
 use App\Http\Requests\StoreMutatieRequest;
-use Illuminate\Http\JsonResponse;
 
 class StoreMutationAction
 {
@@ -19,9 +18,9 @@ class StoreMutationAction
     ) {}
 
     /**
-     * @return JsonResponse|array{status:int,payload:array<string,mixed>}
+     * @return array{status:int,payload:array<string,mixed>,options?:int}
      */
-    public function execute(StoreMutatieRequest $request, int $userId): JsonResponse|array
+    public function execute(StoreMutatieRequest $request, int $userId): array
     {
         $base = $request->base();
         $mode = $request->mode();

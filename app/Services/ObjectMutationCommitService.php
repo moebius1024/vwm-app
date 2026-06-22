@@ -2,7 +2,6 @@
 
 namespace App\Services;
 
-use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -26,6 +25,7 @@ class ObjectMutationCommitService
      * @param  array<string, string>  $roleCrudBySelector
      * @param  array<int, string>  $tbClasses
      * @param  array<int, string>  $goicTargetClassMap
+     * @return array{status:int,payload:array<string,mixed>,options?:int}
      */
     public function commit(
         array $base,
@@ -42,7 +42,7 @@ class ObjectMutationCommitService
         array $goicTargetClassMap,
         array $tbClasses,
         array $roles
-    ): JsonResponse {
+    ): array {
         $objectUris = [];
         $objectMeta = [];
         $allTriples = '';
@@ -320,10 +320,10 @@ class ObjectMutationCommitService
 
                 $safeReport = $this->sanitizeForJson((string) ($validation['report'] ?? ''));
 
-                return response()->json([
+                return $this->result([
                     'error' => 'SHACL validatie faalde. Mutatie is teruggedraaid.',
                     'report' => $safeReport,
-                ], 422, [], JSON_INVALID_UTF8_SUBSTITUTE);
+                ], 422, JSON_INVALID_UTF8_SUBSTITUTE);
             }
 
             DB::commit();
@@ -336,10 +336,10 @@ class ObjectMutationCommitService
                 DB::rollBack();
             }
 
-            return response()->json([
+            return $this->result([
                 'error' => $this->validationExceptionMessage($e),
                 'errors' => $e->errors(),
-            ], 422, [], JSON_INVALID_UTF8_SUBSTITUTE);
+            ], 422, JSON_INVALID_UTF8_SUBSTITUTE);
         } catch (\Throwable $e) {
             if ($graphUpdated) {
                 $this->rollbackGraphTriples($allTriples);
@@ -355,17 +355,35 @@ class ObjectMutationCommitService
                 'trace' => $e->getTraceAsString(),
             ]);
 
-            return response()->json([
+            return $this->result([
                 'error' => 'GraphDB Update mislukt: '.$safeMessage,
-            ], 500, [], JSON_INVALID_UTF8_SUBSTITUTE);
+            ], 500, JSON_INVALID_UTF8_SUBSTITUTE);
         }
 
-        return response()->json([
+        return $this->result([
             'status' => 'success',
             'message' => 'Objecten opgeslagen en gesynchroniseerd met GraphDB',
             'transactie_id' => $transactieId,
             'object_uris' => $objectUris,
         ]);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array{status:int,payload:array<string,mixed>,options?:int}
+     */
+    private function result(array $payload, int $status = 200, int $options = 0): array
+    {
+        $result = [
+            'status' => $status,
+            'payload' => $payload,
+        ];
+
+        if ($options !== 0) {
+            $result['options'] = $options;
+        }
+
+        return $result;
     }
 
     /**

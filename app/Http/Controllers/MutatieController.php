@@ -124,15 +124,11 @@ class MutatieController extends Controller
     }
 
     /**
-     * @param  JsonResponse|array{status:int,payload:array<string,mixed>}  $result
+     * @param  array{status:int,payload:array<string,mixed>,options?:int}  $result
      */
-    private function actionResponse(JsonResponse|array $result): JsonResponse
+    private function actionResponse(array $result): JsonResponse
     {
-        if ($result instanceof JsonResponse) {
-            return $result;
-        }
-
-        return response()->json($result['payload'], $result['status']);
+        return response()->json($result['payload'], $result['status'], [], $result['options'] ?? 0);
     }
 
     private function logFollowWarning(string $reason, int $caseId, int $userId, mixed $bronGoicUri = null): void
