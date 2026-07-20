@@ -98,6 +98,8 @@ test('it writes role mutation audit records and returns role triples', function 
         ->and((int) $mutatie->transactie_id)->toBe($transactieId)
         ->and((int) $mutatie->gegevens_object_in_context_id)->toBe($fromGoicId)
         ->and((int) $mutatie->geproduceerde_toestand_id)->toBe((int) $toestand->id)
+        ->and($mutatie->rdf_uri)->toBeString()
+        ->and($result['triples'])->toContain('<'.$mutatie->rdf_uri.'> a <http://ontologie.politie.nl/def/vwm#ObjectMutatie>')
         ->and(json_decode($mutatie->data, true))->toBe([
             'van' => 'http://example.test/goic/person',
             'naar' => 'http://example.test/goic/vehicle',

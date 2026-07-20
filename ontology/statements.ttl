@@ -26,12 +26,12 @@
   <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#date> .
 
 <http://ontologie.politie.nl/def/dpm#emailAddress> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
-  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Party>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Emailadres";
   <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
 
 <http://ontologie.politie.nl/def/dpm#telephoneNumber> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
-  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Person>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#Party>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Telefoonnummer";
   <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#string> .
 
@@ -401,11 +401,23 @@
 
 <http://ontologie.politie.nl/def/vwm#produceert> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ObjectMutatie>;
-  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#range> [
+    a <http://www.w3.org/2002/07/owl#Class>;
+    <http://www.w3.org/2002/07/owl#unionOf> (
+      <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>
+      <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>
+    )
+  ] .
 
 <http://ontologie.politie.nl/def/vwm#verwijdertLogisch> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ObjectMutatie>;
-  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+  <http://www.w3.org/2000/01/rdf-schema#range> [
+    a <http://www.w3.org/2002/07/owl#Class>;
+    <http://www.w3.org/2002/07/owl#unionOf> (
+      <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>
+      <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>
+    )
+  ] .
 
 
 <http://ontologie.politie.nl/def/dpm#ownedObject> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
@@ -424,7 +436,13 @@
   <http://www.w3.org/2000/01/rdf-schema#label> "producedAtTime" .
 
 <http://ontologie.politie.nl/def/dpm#invalidatedAtTime> a <http://www.w3.org/2002/07/owl#DatatypeProperty>;
-  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> [
+    a <http://www.w3.org/2002/07/owl#Class>;
+    <http://www.w3.org/2002/07/owl#unionOf> (
+      <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>
+      <http://ontologie.politie.nl/def/dpm#DataObjectAssociation>
+    )
+  ];
   <http://www.w3.org/2000/01/rdf-schema#range> <http://www.w3.org/2001/XMLSchema#dateTime>;
   <http://www.w3.org/2000/01/rdf-schema#label> "invalidatedAtTime" .
 

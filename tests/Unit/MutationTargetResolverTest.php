@@ -141,7 +141,8 @@ test('it evaluates beschrijving attach eligibility from active graph rows', func
     $graphService
         ->shouldReceive('query')
         ->once()
-        ->with(Mockery::on(fn (string $query): bool => str_contains($query, "vwm:beschrijftGOIC <{$goicUri}>")))
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, "vwm:beschrijftGOIC <{$goicUri}>")
+            && str_contains($query, 'rdfs:subClassOf+ vwm:ToestandsBeschrijving')))
         ->andReturn([
             ['tb' => 'http://example.test/tb/1', 'tbClass' => $signalementClass],
             ['tb' => 'http://example.test/tb/2', 'tbClass' => $beschrijvingClass],

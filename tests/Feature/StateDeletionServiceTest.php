@@ -3,8 +3,26 @@
 use App\Models\User;
 use App\Services\GraphService;
 use App\Services\SjabloonMetadataService;
+use App\Services\StateDeletionService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+
+it('limits cascade candidates to subclasses of ToestandsBeschrijving', function () {
+    $goicUri = 'http://example.test/goic/cascade-target';
+    $graphService = Mockery::mock(GraphService::class);
+    $graphService
+        ->shouldReceive('query')
+        ->once()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, "vwm:heeftBetrekkingOp <{$goicUri}>")
+            && str_contains($query, 'rdfs:subClassOf+ vwm:ToestandsBeschrijving')))
+        ->andReturn([]);
+    $this->instance(GraphService::class, $graphService);
+
+    $service = app(StateDeletionService::class);
+    $method = new ReflectionMethod($service, 'fetchActiveTbRowsForGoic');
+
+    expect($method->invoke($service, $goicUri))->toBe([]);
+});
 
 it('deletes a role state through the mutation endpoint', function () {
     $user = User::factory()->create();
@@ -100,12 +118,18 @@ it('deletes a role state through the mutation endpoint', function () {
     ]);
     $this->instance(SjabloonMetadataService::class, $metadataService);
 
+    $graphUpdate = null;
     $graphService = Mockery::mock(GraphService::class);
     $graphService
         ->shouldReceive('update')
         ->once()
-        ->with(Mockery::on(fn (string $sparql): bool => str_contains($sparql, $tbUri)
-            && str_contains($sparql, 'invalidatedAtTime')));
+        ->with(Mockery::on(function (string $sparql) use (&$graphUpdate, $tbUri): bool {
+            $graphUpdate = $sparql;
+
+            return str_contains($sparql, $tbUri)
+                && str_contains($sparql, 'invalidatedAtTime')
+                && str_contains($sparql, '<http://ontologie.politie.nl/def/vwm#verwijdertLogisch> <'.$tbUri.'>');
+        }));
     $this->instance(GraphService::class, $graphService);
 
     $response = $this
@@ -136,5 +160,7 @@ it('deletes a role state through the mutation endpoint', function () {
 
     expect($deleteMutatie)->not->toBeNull()
         ->and((int) $deleteMutatie->verwijderde_toestand_id)->toBe($toestandId)
-        ->and(json_decode((string) $deleteMutatie->data, true)['actie'] ?? null)->toBe('beeindig_toestand');
+        ->and(json_decode((string) $deleteMutatie->data, true)['actie'] ?? null)->toBe('beeindig_toestand')
+        ->and($deleteMutatie->rdf_uri)->toBeString()
+        ->and($graphUpdate)->toContain('<'.$deleteMutatie->rdf_uri.'> a <http://ontologie.politie.nl/def/vwm#ObjectMutatie>');
 });

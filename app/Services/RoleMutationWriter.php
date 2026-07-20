@@ -49,6 +49,7 @@ class RoleMutationWriter
                 'transactie_id' => $transactieId,
                 'sjabloon_uri' => $rolePlan['role_tb_class'],
                 'object_uri' => $roleTbUri,
+                'rdf_uri' => $roleMutatieUri,
                 'gegevens_object_in_context_id' => $rolePlan['from_goic_id'],
                 'geproduceerde_toestand_id' => $roleTbId,
                 'datum_tijd' => $now,

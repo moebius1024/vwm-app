@@ -40,6 +40,8 @@ class GoicFollowService
             $newGoicUuid = (string) Str::uuid();
             $newGoicUri = "http://vwm.voorbeeld.nl/data/goic/{$newGoicUuid}";
             $associationUri = 'http://vwm.voorbeeld.nl/data/association/'.((string) Str::uuid());
+            $goicMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
+            $associationMutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
 
             $goicId = DB::table('gegevens_objecten_in_context')->insertGetId([
                 'uuid' => $newGoicUuid,
@@ -54,6 +56,7 @@ class GoicFollowService
                 'transactie_id' => $transactieId,
                 'sjabloon_uri' => "{$vwm}GegevensObjectInContext",
                 'object_uri' => $newGoicUri,
+                'rdf_uri' => $goicMutatieUri,
                 'gegevens_object_in_context_id' => $goicId,
                 'geproduceerde_toestand_id' => null,
                 'datum_tijd' => $now,
@@ -71,6 +74,7 @@ class GoicFollowService
                 'transactie_id' => $transactieId,
                 'sjabloon_uri' => "{$dpm}DataObjectAssociation",
                 'object_uri' => $associationUri,
+                'rdf_uri' => $associationMutatieUri,
                 'gegevens_object_in_context_id' => $goicId,
                 'geproduceerde_toestand_id' => null,
                 'datum_tijd' => $now,
@@ -94,8 +98,6 @@ class GoicFollowService
                 'updated_at' => $now,
             ]);
 
-            $mutatie1Uri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
-            $mutatie2Uri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
             $triples = '';
             $triples .= "<{$newGoicUri}> a <{$vwm}GegevensObjectInContext> .\n";
             $triples .= "<{$newGoicUri}> <{$vwm}beschrijftGO> <{$goUri}> .\n";
@@ -107,13 +109,14 @@ class GoicFollowService
             $triples .= "<{$associationUri}> <{$dpm}targetObject> <{$bronGoicUri}> .\n";
             $triples .= "<{$associationUri}> <{$dpm}producedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
 
-            $triples .= "<{$mutatie1Uri}> a <{$vwm}ObjectMutatie> .\n";
-            $triples .= "<{$mutatie1Uri}> <{$vwm}heeftBetrekkingOp> <{$newGoicUri}> .\n";
-            $triples .= "<{$mutatie1Uri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
+            $triples .= "<{$goicMutatieUri}> a <{$vwm}ObjectMutatie> .\n";
+            $triples .= "<{$goicMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$newGoicUri}> .\n";
+            $triples .= "<{$goicMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
 
-            $triples .= "<{$mutatie2Uri}> a <{$vwm}ObjectMutatie> .\n";
-            $triples .= "<{$mutatie2Uri}> <{$vwm}heeftBetrekkingOp> <{$newGoicUri}> .\n";
-            $triples .= "<{$mutatie2Uri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
+            $triples .= "<{$associationMutatieUri}> a <{$vwm}ObjectMutatie> .\n";
+            $triples .= "<{$associationMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$newGoicUri}> .\n";
+            $triples .= "<{$associationMutatieUri}> <{$vwm}produceert> <{$associationUri}> .\n";
+            $triples .= "<{$associationMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
 
             $this->graphService->update("
                 INSERT DATA {
@@ -170,10 +173,13 @@ class GoicFollowService
                 'updated_at' => $now,
             ]);
 
+            $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
+
             DB::table('object_mutaties')->insert([
                 'transactie_id' => $transactieId,
                 'sjabloon_uri' => "{$dpm}DataObjectAssociation",
                 'object_uri' => (string) $association->association_uri,
+                'rdf_uri' => $mutatieUri,
                 'gegevens_object_in_context_id' => (int) $association->goic_id,
                 'geproduceerde_toestand_id' => null,
                 'datum_tijd' => $now,
@@ -195,11 +201,11 @@ class GoicFollowService
                     'updated_at' => $now,
                 ]);
 
-            $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
             $triples = '';
             $triples .= "<{$association->association_uri}> <{$dpm}invalidatedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
             $triples .= "<{$mutatieUri}> a <{$vwm}ObjectMutatie> .\n";
             $triples .= "<{$mutatieUri}> <{$vwm}heeftBetrekkingOp> <{$association->goic_uri}> .\n";
+            $triples .= "<{$mutatieUri}> <{$vwm}verwijdertLogisch> <{$association->association_uri}> .\n";
             $triples .= "<{$mutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
 
             $this->graphService->update("

@@ -142,10 +142,13 @@ class StateDeletionService
                     continue;
                 }
                 $seenTbUris[$tbUri] = true;
+                $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
+
                 DB::table('object_mutaties')->insert([
                     'transactie_id' => $transactieId,
                     'sjabloon_uri' => (string) ($item['tb_class'] ?? ''),
                     'object_uri' => $tbUri,
+                    'rdf_uri' => $mutatieUri,
                     'gegevens_object_in_context_id' => (int) $targetRow->goic_id,
                     'geproduceerde_toestand_id' => null,
                     'verwijderde_toestand_id' => isset($item['tb_id']) ? (int) $item['tb_id'] : null,
@@ -159,10 +162,10 @@ class StateDeletionService
                     'updated_at' => $now,
                 ]);
 
-                $mutatieUri = 'http://vwm.voorbeeld.nl/data/mutatie/'.((string) Str::uuid());
                 $triples .= "<{$tbUri}> <{$dpm}invalidatedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
                 $triples .= "<{$mutatieUri}> a <{$vwm}ObjectMutatie> .\n";
                 $triples .= "<{$mutatieUri}> <{$vwm}heeftBetrekkingOp> <{$targetRow->goic_uri}> .\n";
+                $triples .= "<{$mutatieUri}> <{$vwm}verwijdertLogisch> <{$tbUri}> .\n";
                 $triples .= "<{$mutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> .\n";
             }
 
@@ -253,6 +256,7 @@ class StateDeletionService
 
         $query = "
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
             SELECT DISTINCT ?tb ?tbClass
@@ -267,6 +271,7 @@ class StateDeletionService
                              vwm:produceert ?tb .
                 }
                 ?tb rdf:type ?tbClass .
+                ?tbClass rdfs:subClassOf+ vwm:ToestandsBeschrijving .
                 FILTER (?tbClass != vwm:ToestandsBeschrijving)
                 FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
             }
