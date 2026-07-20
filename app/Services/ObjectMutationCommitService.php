@@ -75,6 +75,7 @@ class ObjectMutationCommitService
                         'transactie_id' => $transactieId,
                         'sjabloon_uri' => (string) ($mutationTargetMeta->tb_class ?? ''),
                         'object_uri' => (string) $mutationTargetMeta->tb_uri,
+                        'rdf_uri' => $invalidateMutatieUri,
                         'gegevens_object_in_context_id' => (int) $mutationTargetMeta->goic_id,
                         'geproduceerde_toestand_id' => null,
                         'verwijderde_toestand_id' => isset($mutationTargetMeta->tb_id) ? (int) $mutationTargetMeta->tb_id : null,
@@ -91,6 +92,7 @@ class ObjectMutationCommitService
                     $allTriples .= "<{$mutationTargetMeta->tb_uri}> <http://ontologie.politie.nl/def/dpm#invalidatedAtTime> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
                     $allTriples .= "<{$invalidateMutatieUri}> a <{$vwm}ObjectMutatie> . \n";
                     $allTriples .= "<{$invalidateMutatieUri}> <{$vwm}heeftBetrekkingOp> <{$mutationTargetMeta->goic_uri}> . \n";
+                    $allTriples .= "<{$invalidateMutatieUri}> <{$vwm}verwijdertLogisch> <{$mutationTargetMeta->tb_uri}> . \n";
                     $allTriples .= "<{$invalidateMutatieUri}> <{$vwm}datumTijd> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
                 }
 
@@ -170,6 +172,7 @@ class ObjectMutationCommitService
                         'transactie_id' => $transactieId,
                         'sjabloon_uri' => $tbClass,
                         'object_uri' => $tbUri,
+                        'rdf_uri' => $mutatieUri,
                         'gegevens_object_in_context_id' => $goicId,
                         'geproduceerde_toestand_id' => $tbId,
                         'datum_tijd' => now(),

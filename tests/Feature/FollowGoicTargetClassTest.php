@@ -87,10 +87,28 @@ test('volg goic requires a case id', function () {
         ->assertJsonValidationErrors('case_id');
 });
 
+test('case state lookup limits produced objects to subclasses of ToestandsBeschrijving', function () {
+    $goicUri = 'http://example.test/goic/state-lookup';
+    $graphService = Mockery::mock(GraphService::class);
+    $graphService
+        ->shouldReceive('query')
+        ->once()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, "VALUES ?goic { <{$goicUri}> }")
+            && str_contains($query, 'rdfs:subClassOf+ vwm:ToestandsBeschrijving')))
+        ->andReturn([]);
+    $this->instance(GraphService::class, $graphService);
+
+    $controller = app(CaseController::class);
+    $method = new ReflectionMethod($controller, 'fetchActiveToestandenByGoicUris');
+
+    expect($method->invoke($controller, [$goicUri]))->toBe([]);
+});
+
 test('volg goic copies the source target class to the new goic', function () {
     $user = User::factory()->create();
     $fixture = createFollowGoicFixture($user);
 
+    $graphUpdate = null;
     $graphService = Mockery::mock(GraphService::class);
     $graphService
         ->shouldReceive('query')
@@ -112,8 +130,12 @@ test('volg goic copies the source target class to the new goic', function () {
     $graphService
         ->shouldReceive('update')
         ->once()
-        ->with(Mockery::on(fn (string $sparql): bool => str_contains($sparql, '<http://ontologie.politie.nl/def/vwm#heeftDoelClass> <'.$fixture['target_class'].'>')
-            && str_contains($sparql, '<http://ontologie.politie.nl/def/dpm#targetObject> <'.$fixture['source_goic_uri'].'>')));
+        ->with(Mockery::on(function (string $sparql) use (&$graphUpdate, $fixture): bool {
+            $graphUpdate = $sparql;
+
+            return str_contains($sparql, '<http://ontologie.politie.nl/def/vwm#heeftDoelClass> <'.$fixture['target_class'].'>')
+                && str_contains($sparql, '<http://ontologie.politie.nl/def/dpm#targetObject> <'.$fixture['source_goic_uri'].'>');
+        }));
 
     $this->instance(GraphService::class, $graphService);
 
@@ -130,15 +152,28 @@ test('volg goic copies the source target class to the new goic', function () {
 
     expect(DB::table('data_object_associations')->where('target_goic_uri', $fixture['source_goic_uri'])->count())->toBe(1);
 
-    $goicMutationData = DB::table('object_mutaties')
-        ->where('sjabloon_uri', 'http://ontologie.politie.nl/def/vwm#GegevensObjectInContext')
-        ->value('data');
+    $mutations = DB::table('object_mutaties')
+        ->whereIn('sjabloon_uri', [
+            'http://ontologie.politie.nl/def/vwm#GegevensObjectInContext',
+            'http://ontologie.politie.nl/def/dpm#DataObjectAssociation',
+        ])
+        ->get(['sjabloon_uri', 'rdf_uri', 'data'])
+        ->keyBy('sjabloon_uri');
+    $goicMutation = $mutations->get('http://ontologie.politie.nl/def/vwm#GegevensObjectInContext');
+    $associationMutation = $mutations->get('http://ontologie.politie.nl/def/dpm#DataObjectAssociation');
+    $associationUri = $response->json('association_uri');
 
-    expect(json_decode((string) $goicMutationData, true))->toMatchArray([
+    expect(json_decode((string) $goicMutation?->data, true))->toMatchArray([
         'actie' => 'volg_goic',
         'bronGoic' => $fixture['source_goic_uri'],
         'doelClass' => $fixture['target_class'],
-    ]);
+    ])
+        ->and($goicMutation?->rdf_uri)->toBeString()
+        ->and($associationMutation?->rdf_uri)->toBeString()
+        ->and($goicMutation?->rdf_uri)->not->toBe($associationMutation?->rdf_uri)
+        ->and($graphUpdate)->toContain('<'.$goicMutation?->rdf_uri.'> a <http://ontologie.politie.nl/def/vwm#ObjectMutatie>')
+        ->and($graphUpdate)->toContain('<'.$associationMutation?->rdf_uri.'> a <http://ontologie.politie.nl/def/vwm#ObjectMutatie>')
+        ->and($graphUpdate)->toContain('<'.$associationMutation?->rdf_uri.'> <http://ontologie.politie.nl/def/vwm#produceert> <'.$associationUri.'>');
 });
 
 test('volg goic rejects a source goic without target class', function () {
@@ -411,12 +446,18 @@ test('ontvolg goic invalidates the data object association', function () {
         'updated_at' => now(),
     ]);
 
+    $graphUpdate = null;
     $graphService = Mockery::mock(GraphService::class);
     $graphService
         ->shouldReceive('update')
         ->once()
-        ->with(Mockery::on(fn (string $sparql): bool => str_contains($sparql, '<'.$associationUri.'> <http://ontologie.politie.nl/def/dpm#invalidatedAtTime>')
-            && str_contains($sparql, '<http://ontologie.politie.nl/def/vwm#heeftBetrekkingOp> <'.$localGoicUri.'>')));
+        ->with(Mockery::on(function (string $sparql) use (&$graphUpdate, $associationUri, $localGoicUri): bool {
+            $graphUpdate = $sparql;
+
+            return str_contains($sparql, '<'.$associationUri.'> <http://ontologie.politie.nl/def/dpm#invalidatedAtTime>')
+                && str_contains($sparql, '<http://ontologie.politie.nl/def/vwm#heeftBetrekkingOp> <'.$localGoicUri.'>')
+                && str_contains($sparql, '<http://ontologie.politie.nl/def/vwm#verwijdertLogisch> <'.$associationUri.'>');
+        }));
 
     $this->instance(GraphService::class, $graphService);
 
@@ -437,13 +478,15 @@ test('ontvolg goic invalidates the data object association', function () {
         ->where('rdf_uri', $associationUri)
         ->first(['invalidated_at']);
 
-    $deleteMutationData = DB::table('object_mutaties')
+    $deleteMutation = DB::table('object_mutaties')
         ->where('object_uri', $associationUri)
         ->orderByDesc('id')
-        ->value('data');
+        ->first(['rdf_uri', 'data']);
 
     expect($association?->invalidated_at)->not->toBeNull()
-        ->and($deleteMutationData)->toContain('beeindig_volg_goic');
+        ->and($deleteMutation?->data)->toContain('beeindig_volg_goic')
+        ->and($deleteMutation?->rdf_uri)->toBeString()
+        ->and($graphUpdate)->toContain('<'.$deleteMutation?->rdf_uri.'> a <http://ontologie.politie.nl/def/vwm#ObjectMutatie>');
 });
 
 test('ontvolg goic requires a case id', function () {

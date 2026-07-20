@@ -294,6 +294,7 @@ class MutationTargetResolver
 
         $query = "
             PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
             SELECT DISTINCT ?tb ?tbClass
@@ -308,6 +309,7 @@ class MutationTargetResolver
                              vwm:produceert ?tb .
                 }
                 ?tb rdf:type ?tbClass .
+                ?tbClass rdfs:subClassOf+ vwm:ToestandsBeschrijving .
                 FILTER (?tbClass != vwm:ToestandsBeschrijving)
                 FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
             }
