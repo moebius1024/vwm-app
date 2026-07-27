@@ -50,7 +50,7 @@ class CaseController extends Controller
             ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
             ->where('cases.user_id', $userId)
             ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
-            ->orderByDesc('cases.created_at');
+            ->orderByDesc('cases.id');
 
         if ($teamId !== null) {
             $casesQuery
@@ -68,6 +68,7 @@ class CaseController extends Controller
         $cases = $casesQuery->get([
             'cases.id',
             'cases.uuid',
+            'cases.case_soort_id',
             'cases.created_at',
             'case_soorten.naam as case_soort_naam',
             'case_soorten.code as case_soort_code',
