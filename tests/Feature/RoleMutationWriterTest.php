@@ -71,6 +71,7 @@ test('it writes role mutation audit records and returns role triples', function 
             'to_goic_uri' => 'http://example.test/goic/vehicle',
             'van_property' => 'http://example.test/heeftPersoon',
             'naar_property' => 'http://example.test/heeftVoertuig',
+            'role_data' => ['functieNaam' => 'Filiaalmanager'],
         ]],
         now: $now,
         nowIso: $nowIso,
@@ -82,6 +83,7 @@ test('it writes role mutation audit records and returns role triples', function 
         ->and($result['triples'])->toContain('<http://example.test/heeftPersoon> <http://example.test/goic/person>')
         ->and($result['triples'])->toContain('<http://example.test/heeftVoertuig> <http://example.test/goic/vehicle>')
         ->and($result['triples'])->toContain('<http://ontologie.politie.nl/def/vwm#rolType> <http://example.test/RolType_Eigenaar>')
+        ->and($result['triples'])->toContain('<http://ontologie.politie.nl/def/vwm#functieNaam> "Filiaalmanager"')
         ->and($result['triples'])->toContain('<http://ontologie.politie.nl/def/vwm#geregistreerdOp> "'.$nowIso.'"^^<http://www.w3.org/2001/XMLSchema#dateTime>');
 
     $toestand = DB::table('toestands_beschrijvingen')
@@ -104,5 +106,6 @@ test('it writes role mutation audit records and returns role triples', function 
             'van' => 'http://example.test/goic/person',
             'naar' => 'http://example.test/goic/vehicle',
             'rolType' => 'http://example.test/RolType_Eigenaar',
+            'functieNaam' => 'Filiaalmanager',
         ]);
 });

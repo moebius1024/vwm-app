@@ -103,6 +103,30 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
     ]
   ) .
 
+vwm:GoedBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:GoedBeschrijving ;
+  sh:property [
+    sh:path dpm:omschrijving ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:goedsoort ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:PersoonOndernemingFunctieRolShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonOndernemingFunctieRol ;
+  sh:property [
+    sh:path vwm:functieNaam ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] .
+
 vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:VoertuigBeschrijving ;
   sh:property [
@@ -286,6 +310,14 @@ vwm:RolTypeEigenaarRegelShape a sh:NodeShape ;
   vwm:vanProperty vwm:heeftPersoon ;
   vwm:naarProperty vwm:heeftVoertuig .
 
+vwm:RolTypeAangeverRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Aangever ;
+  vwm:rolTbClass vwm:PersoonIncidentRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Incident ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftIncident .
+
 vwm:RolTypeGetuigeRegelShape a sh:NodeShape ;
   sh:targetNode vwm:RolType_Getuige ;
   vwm:rolTbClass vwm:PersoonIncidentRol ;
@@ -309,6 +341,14 @@ vwm:RolTypeVerdachteRegelShape a sh:NodeShape ;
   vwm:naarClass dpm:Incident ;
   vwm:vanProperty vwm:heeftPersoon ;
   vwm:naarProperty vwm:heeftIncident .
+
+vwm:RolTypeFunctieRegelShape a sh:NodeShape ;
+  sh:targetNode vwm:RolType_Functie ;
+  vwm:rolTbClass vwm:PersoonOndernemingFunctieRol ;
+  vwm:vanClass dpm:Person ;
+  vwm:naarClass dpm:Onderneming ;
+  vwm:vanProperty vwm:heeftPersoon ;
+  vwm:naarProperty vwm:heeftOnderneming .
 
 vwm:DossierExactOneIncidentShape a sh:NodeShape ;
   sh:targetClass vwm:Dossier ;

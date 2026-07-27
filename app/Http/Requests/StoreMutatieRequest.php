@@ -162,6 +162,7 @@ class StoreMutatieRequest extends FormRequest
             'roles.items.*.toId' => ['sometimes', 'string'],
             'roles.items.*.fromGoicId' => ['sometimes', 'integer'],
             'roles.items.*.toGoicId' => ['sometimes', 'integer'],
+            'roles.items.*.data' => ['sometimes', 'array'],
         ];
     }
 
@@ -179,6 +180,7 @@ class StoreMutatieRequest extends FormRequest
             'roles.items.*.toId' => ['sometimes', 'string'],
             'roles.items.*.fromGoicId' => ['sometimes', 'integer'],
             'roles.items.*.toGoicId' => ['sometimes', 'integer'],
+            'roles.items.*.data' => ['sometimes', 'array'],
         ];
     }
 

@@ -82,6 +82,7 @@ class SjabloonController extends Controller
         $roleUris = array_map(fn ($row) => $row->sjabloon_uri, $linkedRoles);
         $roleMeta = $this->metadataService->fetchRolTbMetaByClasses($roleUris);
         $roleShapeRules = $this->metadataService->fetchRoleShapeRules();
+        $roleFieldsByTbClass = [];
         $allowedRoles = [];
         foreach ($linkedRoles as $row) {
             $selectorUri = $row->sjabloon_uri;
@@ -105,12 +106,19 @@ class SjabloonController extends Controller
             if (! $meta) {
                 continue;
             }
+
+            $roleTbClass = $meta['rolTbClass'] ?? null;
+            if (is_string($roleTbClass) && $roleTbClass !== '' && ! array_key_exists($roleTbClass, $roleFieldsByTbClass)) {
+                $roleFieldsByTbClass[$roleTbClass] = $this->metadataService->fetchSjabloon($roleTbClass)['velden'];
+            }
+
             $allowedRoles[] = [
                 'tb_class' => $selectorUri,
                 'label' => $meta['label'] ?? ($resolvedRoleType ? $this->metadataService->shortId($resolvedRoleType) : $this->metadataService->shortId($selectorUri)),
                 'role_type' => $resolvedRoleType,
                 'van_class' => $meta['vanClass'] ?? null,
                 'naar_class' => $meta['naarClass'] ?? null,
+                'velden' => is_string($roleTbClass) ? $roleFieldsByTbClass[$roleTbClass] ?? [] : [],
                 'volgorde' => $row->volgorde ?? 1,
                 'crud_flags' => $row->crud_flags ?? 'CRD',
             ];
@@ -211,5 +219,4 @@ class SjabloonController extends Controller
             'report' => $result['report'],
         ]);
     }
-
 }

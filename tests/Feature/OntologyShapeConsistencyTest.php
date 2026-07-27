@@ -68,6 +68,31 @@ it('assigns shared contact properties to Party', function (string $propertyUri) 
     'telephone number' => 'http://ontologie.politie.nl/def/dpm#telephoneNumber',
 ]);
 
+it('defines a goods description template with a required description', function () {
+    $ontology = file_get_contents(base_path('ontology/statements.ttl'));
+    $shapes = file_get_contents(base_path('ontology/shapes-domain.ttl'));
+
+    expect($ontology)->toContain('<http://ontologie.politie.nl/def/dpm#Goed> a <http://www.w3.org/2002/07/owl#Class>')
+        ->and($ontology)->toContain('<http://ontologie.politie.nl/def/vwm#GoedBeschrijving> a <http://www.w3.org/2002/07/owl#Class>')
+        ->and($ontology)->toContain('<http://ontologie.politie.nl/def/vwm#beschrijftClass> <http://ontologie.politie.nl/def/dpm#Goed>')
+        ->and($shapes)->toContain('vwm:GoedBeschrijvingShape')
+        ->and($shapes)->toContain('sh:path dpm:omschrijving')
+        ->and($shapes)->toContain('sh:minCount 1');
+});
+
+it('defines the reporter role as a person to incident role', function () {
+    $ontology = file_get_contents(base_path('ontology/statements.ttl'));
+    $processShapes = file_get_contents(base_path('ontology/shapes-process.ttl'));
+
+    expect($ontology)->toContain('<http://ontologie.politie.nl/def/vwm#RolType_Aangever> a <http://ontologie.politie.nl/def/vwm#RolType>')
+        ->and($ontology)->toContain('<http://ontologie.politie.nl/def/vwm#Rol_Aangever> <http://www.w3.org/2000/01/rdf-schema#label> "Aangever"')
+        ->and($processShapes)->toContain('vwm:RolTypeAangeverRegelShape')
+        ->and($processShapes)->toContain('sh:targetNode vwm:RolType_Aangever')
+        ->and($processShapes)->toContain('vwm:rolTbClass vwm:PersoonIncidentRol')
+        ->and($processShapes)->toContain('vwm:vanClass dpm:Person')
+        ->and($processShapes)->toContain('vwm:naarClass dpm:Incident');
+});
+
 it('assigns invalidation time to states and data object associations', function () {
     $ontology = loadOntologyGraph([
         base_path('ontology/statements.ttl'),

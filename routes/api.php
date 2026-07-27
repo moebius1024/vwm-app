@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\BestandController;
 use App\Http\Controllers\MutatieController;
+use App\Http\Controllers\ReferenceConceptController;
 use App\Http\Controllers\SjabloonController;
 use App\Http\Controllers\VehicleMakeController;
 use Illuminate\Http\Request;
@@ -22,6 +23,8 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::get('/identifiers', [SjabloonController::class, 'listIdentifiers'])->name('api.identifiers.index');
     Route::get('/shacl/validate', [SjabloonController::class, 'validateShacl'])->name('api.shacl.validate');
     Route::get('/voertuig/kenteken', [VehicleMakeController::class, 'lookupKenteken'])->name('api.voertuig.kenteken.lookup');
+    Route::get('/referentieconcepten', [ReferenceConceptController::class, 'children'])->name('api.referentieconcepten.children');
+    Route::post('/referentieconcepten/labels', [ReferenceConceptController::class, 'labels'])->name('api.referentieconcepten.labels');
     Route::post('/bestand/upload', [BestandController::class, 'upload'])->name('api.bestand.upload');
     Route::get('/bestand/view', [BestandController::class, 'view'])->name('api.bestand.view');
     Route::post('/mutatie', [MutatieController::class, 'storeMutatie'])->name('api.mutatie.store');

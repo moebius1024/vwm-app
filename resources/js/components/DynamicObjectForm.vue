@@ -189,6 +189,13 @@
                 class="rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-700 dark:text-white"
                 :required="isFieldRequired(object, veld)"
               ></textarea>
+              <ReferenceConceptTreeSelect
+                v-else-if="isTreeLookupField(veld)"
+                v-model="object.formData[veld.property] as string"
+                :endpoint="veld.lookup?.endpoint!"
+                :required="isFieldRequired(object, veld)"
+                @update:model-value="delete fieldErrors[fieldErrorKey(object, veld.property)]"
+              />
               <select
                 v-else-if="isGoicLookupField(veld)"
                 v-model="object.formData[veld.property] as string"
@@ -313,6 +320,18 @@
             </option>
           </select>
         </div>
+        <div v-if="activeRoleForSelection.velden?.length" class="mt-3 grid gap-3 sm:grid-cols-2">
+          <label v-for="veld in activeRoleForSelection.velden" :key="veld.property" class="grid gap-1 text-sm text-gray-700 dark:text-gray-200">
+            <span>{{ veld.label }}<span v-if="veld.required" class="text-red-600"> *</span></span>
+            <input
+              v-model="activeRoleSelection.data[veld.property]"
+              type="text"
+              :required="veld.required"
+              class="h-10 rounded-lg border border-gray-300 bg-white px-3 text-sm shadow-sm outline-none transition focus:border-amber-500 focus:ring-2 focus:ring-amber-500/40 dark:border-gray-600 dark:bg-gray-900"
+              @input="roleError = ''"
+            >
+          </label>
+        </div>
       </div>
 
       <div class="flex flex-wrap items-center justify-end gap-3">
@@ -338,6 +357,7 @@
 <script setup lang="ts">
 import axios from 'axios';
 import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
+import ReferenceConceptTreeSelect from '@/components/ReferenceConceptTreeSelect.vue';
 
 interface Veld {
   label: string;
@@ -432,6 +452,7 @@ interface AllowedRole {
   naar_class: string | null;
   volgorde?: number;
   crud_flags?: string | null;
+  velden?: Veld[];
 }
 
 interface FileUploadState {
@@ -488,8 +509,8 @@ const describedClassByTbClass = ref<Record<string, string>>({});
 const labelMap = ref<Record<string, string>>({});
 let objectCounter = 1;
 let clientCounter = 1;
-type RoleSelection = { fromGoicId: string; toGoicId: string };
-type RolePayloadItem = { roleTbClass: string; fromGoicId: number; toGoicId: number };
+type RoleSelection = { fromGoicId: string; toGoicId: string; data: Record<string, string> };
+type RolePayloadItem = { roleTbClass: string; fromGoicId: number; toGoicId: number; data: Record<string, string> };
 const roleSelections = ref<Record<string, RoleSelection[]>>({});
 const fieldErrors = ref<Record<string, string>>({});
 const roleError = ref<string>('');
@@ -785,6 +806,9 @@ const isFieldEnabled = (object: ObjectBlock, veld: Veld) => {
 
 const isFieldRequired = (object: ObjectBlock, veld: Veld) =>
   veld.required || (!!veld.required_when_enabled && isFieldEnabled(object, veld));
+
+const isTreeLookupField = (veld: Veld) =>
+  veld.lookup?.trigger?.toLowerCase() === 'tree' && !!veld.lookup.endpoint;
 
 const onFieldBlur = (object: ObjectBlock, veld: Veld) => {
   void triggerMetadataLookup(object, veld, 'blur');
@@ -1449,6 +1473,7 @@ return;
   roleSelections.value[role.tb_class] = [{
     fromGoicId: '',
     toGoicId: toOptions.length === 1 ? String(toOptions[0].id) : '',
+    data: Object.fromEntries((role.velden ?? []).map((veld) => [veld.property, ''])),
   }];
 };
 
@@ -1595,6 +1620,7 @@ return;
           roleTbClass: role.tb_class,
           fromGoicId: Number(fromId),
           toGoicId: Number(toId),
+          data: selection.data,
         });
       });
     });

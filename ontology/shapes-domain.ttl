@@ -97,6 +97,30 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
     ]
   ) .
 
+vwm:GoedBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:GoedBeschrijving ;
+  sh:property [
+    sh:path dpm:omschrijving ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:goedsoort ;
+    sh:nodeKind sh:IRI ;
+    sh:minCount 1 ;
+    sh:order 2 ;
+  ] .
+
+vwm:PersoonOndernemingFunctieRolShape a sh:NodeShape ;
+  sh:targetClass vwm:PersoonOndernemingFunctieRol ;
+  sh:property [
+    sh:path vwm:functieNaam ;
+    sh:datatype xsd:string ;
+    sh:minCount 1 ;
+    sh:order 1 ;
+  ] .
+
 vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:VoertuigBeschrijving ;
   sh:property [

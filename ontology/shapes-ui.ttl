@@ -20,6 +20,16 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
     ui:requiredWhenEnabled true ;
   ] .
 
+vwm:GoedBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:GoedBeschrijving ;
+  ui:buttonLabelRegister "Goed" ;
+  ui:buttonLabelAttach "GoedBeschrijving" ;
+  sh:property [
+    sh:path dpm:goedsoort ;
+    ui:lookupEndpoint "/api/referentieconcepten" ;
+    ui:lookupTrigger "tree" ;
+  ] .
+
 vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:VoertuigBeschrijving ;
   sh:property [

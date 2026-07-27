@@ -35,6 +35,12 @@ class RoleMutationWriter
             if (! empty($rolePlan['role_type'])) {
                 $roleData['rolType'] = $rolePlan['role_type'];
             }
+            $functieNaam = $rolePlan['role_data']['http://ontologie.politie.nl/def/vwm#functieNaam']
+                ?? $rolePlan['role_data']['functieNaam']
+                ?? null;
+            if (is_string($functieNaam) && $functieNaam !== '') {
+                $roleData['functieNaam'] = $functieNaam;
+            }
 
             $roleTbId = DB::table('toestands_beschrijvingen')->insertGetId([
                 'uuid' => $roleTbUuid,
@@ -63,6 +69,10 @@ class RoleMutationWriter
             $triples .= "<{$roleTbUri}> <{$rolePlan['naar_property']}> <{$rolePlan['to_goic_uri']}> . \n";
             if (! empty($rolePlan['role_type'])) {
                 $triples .= "<{$roleTbUri}> <{$vwmNamespace}rolType> <{$rolePlan['role_type']}> . \n";
+            }
+            if (isset($roleData['functieNaam'])) {
+                $escapedFunctieNaam = addcslashes($roleData['functieNaam'], "\\\\\"\n\r");
+                $triples .= "<{$roleTbUri}> <{$vwmNamespace}functieNaam> \"{$escapedFunctieNaam}\" . \n";
             }
             $triples .= "<{$roleTbUri}> <{$vwmNamespace}geregistreerdOp> \"{$nowIso}\"^^<http://www.w3.org/2001/XMLSchema#dateTime> . \n";
 

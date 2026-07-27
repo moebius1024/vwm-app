@@ -834,6 +834,20 @@ const loadLabels = async () => {
     }
 
     labelMap.value = labels;
+
+    const referenceConceptUris = uris.filter((uri) => uri.startsWith('http://ontologie.politie.nl/ref/gpc/concept/'));
+
+    if (referenceConceptUris.length) {
+      try {
+        const referenceLabelsResponse = await axios.post(apiUrl('/api/referentieconcepten/labels'), { uris: referenceConceptUris });
+        labelMap.value = {
+          ...labelMap.value,
+          ...(referenceLabelsResponse.data?.labels ?? {}),
+        };
+      } catch (error) {
+        console.error('Fout bij ophalen begrippenlijstlabels:', error);
+      }
+    }
   } catch (error) {
     console.error('Fout bij ophalen labels:', error);
     labelMap.value = {};

@@ -336,6 +336,7 @@ class RoleMutationService
                     'to_goic_uri' => (string) $toGoic,
                     'van_property' => (string) $roleMeta['vanProperty'],
                     'naar_property' => (string) $roleMeta['naarProperty'],
+                    'role_data' => is_array($roleItem['data'] ?? null) ? $roleItem['data'] : [],
                 ];
             }
         }

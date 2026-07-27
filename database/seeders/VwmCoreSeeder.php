@@ -136,7 +136,7 @@ class VwmCoreSeeder extends Seeder
             }
         }
 
-        // 2d. Winkeldiefstal transactie + vaste set beschrijvingen (Incident, Persoon, Onderneming)
+        // 2d. Winkeldiefstal transactie + vaste set beschrijvingen (Incident, Persoon, Onderneming, Goed)
         $winkeldiefstalId = DB::table('transactie_soorten')
             ->where('naam', 'Winkeldiefstal')
             ->value('id');
@@ -154,6 +154,7 @@ class VwmCoreSeeder extends Seeder
             ['uri' => 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving', 'volgorde' => 1],
             ['uri' => 'http://ontologie.politie.nl/def/vwm#PersoonsBeschrijving', 'volgorde' => 2],
             ['uri' => 'http://ontologie.politie.nl/def/vwm#OndernemingsBeschrijving', 'volgorde' => 3],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#GoedBeschrijving', 'volgorde' => 5],
         ];
 
         foreach ($winkeldiefstalBeschrijvingen as $desc) {
@@ -181,6 +182,43 @@ class VwmCoreSeeder extends Seeder
                 'type' => 'sjabloon',
                 'volgorde' => $desc['volgorde'],
                 'crud_flags' => $desc['uri'] === 'http://ontologie.politie.nl/def/vwm#IncidentBeschrijving' ? 'CRU' : 'CRUD',
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        $winkeldiefstalRollen = [
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Aangever', 'volgorde' => 1],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Verdachte', 'volgorde' => 2],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Getuige', 'volgorde' => 3],
+            ['uri' => 'http://ontologie.politie.nl/def/vwm#Rol_Functie', 'volgorde' => 4],
+        ];
+
+        foreach ($winkeldiefstalRollen as $rol) {
+            $existing = DB::table('transactie_soort_sjabloon')
+                ->where('transactie_soort_id', $winkeldiefstalId)
+                ->where('sjabloon_uri', $rol['uri'])
+                ->where('type', 'rol')
+                ->first(['id']);
+
+            if ($existing) {
+                DB::table('transactie_soort_sjabloon')
+                    ->where('id', $existing->id)
+                    ->update([
+                        'volgorde' => $rol['volgorde'],
+                        'crud_flags' => 'CRD',
+                        'updated_at' => now(),
+                    ]);
+
+                continue;
+            }
+
+            DB::table('transactie_soort_sjabloon')->insert([
+                'transactie_soort_id' => $winkeldiefstalId,
+                'sjabloon_uri' => $rol['uri'],
+                'type' => 'rol',
+                'volgorde' => $rol['volgorde'],
+                'crud_flags' => 'CRD',
                 'created_at' => now(),
                 'updated_at' => now(),
             ]);
