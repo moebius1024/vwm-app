@@ -108,10 +108,15 @@ test('the command applies a configured GPC base URI without requiring a trailing
     }
 });
 
-test('the command uses the inspected workbook and required default Turtle path', function () {
-    $sourcePath = base_path('docs/SKOS_Begrippen/GPC as of May 2026 (concept voor nov 2026) v20260520 NL.xlsx');
+test('the command discovers a workbook and uses the required default Turtle path', function () {
+    $sourcePath = base_path('docs/SKOS_Begrippen/gs1-gpc.xlsx');
     $outputPath = storage_path('app/exports/gs1-gpc-nl.ttl');
     $service = mock(Gs1GpcSkosExportService::class);
+    $files = mock(Filesystem::class);
+    $files->shouldReceive('glob')
+        ->once()
+        ->with(base_path('docs/SKOS_Begrippen/*.xlsx'))
+        ->andReturn([$sourcePath]);
     $service->shouldReceive('export')
         ->once()
         ->with($sourcePath, $outputPath, false)

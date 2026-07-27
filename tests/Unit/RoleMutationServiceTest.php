@@ -200,6 +200,7 @@ test('it builds role mutation plans for explicit existing goic roles', function 
         'to_goic_uri' => 'http://example.test/goic/vehicle',
         'van_property' => 'http://example.test/heeftPersoon',
         'naar_property' => 'http://example.test/heeftVoertuig',
+        'role_data' => [],
     ]]);
 });
 
