@@ -9,7 +9,13 @@
 vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:PersoonsBeschrijving ;
   ui:buttonLabelRegister "Persoon" ;
-  ui:buttonLabelAttach "PersoonBeschrijving" .
+  ui:buttonLabelAttach "PersoonBeschrijving" ;
+  ui:sameIdentityActionLabel "Zelfde persoon" ;
+  ui:alreadyLinkedLabel "Al gekoppeld via Verwijzing" ;
+  sh:property [
+    sh:path dpm:bsn ;
+    ui:primaryDisplayIdentifier true ;
+  ] .
 
 vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:OndernemingsBeschrijving ;
@@ -18,6 +24,24 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
     ui:enabledWhenProperty dpm:legalForm ;
     ui:enabledWhenValue "anders" ;
     ui:requiredWhenEnabled true ;
+  ] ;
+  sh:property [
+    sh:path dpm:name ;
+    ui:primaryDisplayIdentifier true ;
+  ] .
+
+vwm:IncidentBeschrijvingShape a sh:NodeShape ;
+  sh:targetClass vwm:IncidentBeschrijving ;
+  sh:property [
+    sh:path dpm:location ;
+    ui:primaryDisplayIdentifier true ;
+    ui:primaryDisplayOrder 1 ;
+  ] ;
+  sh:property [
+    sh:path dpm:timestamp ;
+    ui:primaryDisplayIdentifier true ;
+    ui:primaryDisplayOrder 2 ;
+    ui:primaryDisplayLabel "Tijd" ;
   ] .
 
 vwm:GoedBeschrijvingShape a sh:NodeShape ;
@@ -54,7 +78,10 @@ vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
     ui:lookupTrigger "input" ;
     ui:lookupDebounceMs 500 ;
     ui:lookupMinLength 6 ;
-  ] .
+    ui:primaryDisplayIdentifier true ;
+  ] ;
+  ui:sameIdentityActionLabel "Zelfde voertuig" ;
+  ui:alreadyLinkedLabel "Al gekoppeld via Verwijzing" .
 
 vwm:PersoonSignalementShape a sh:NodeShape ;
   sh:targetClass vwm:PersoonSignalement ;

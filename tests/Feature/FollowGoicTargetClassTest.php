@@ -610,10 +610,11 @@ test('go link count filter ignores goics with only invalidated follow associatio
     expect($activeUris)->toBe([$activeFollowGoicUri]);
 });
 
-test('go links page hides invalidated followed goics', function () {
-    $user = User::factory()->create();
-    $fixture = createFollowGoicFixture($user);
-    grantFollowGoicRechtsgrondToUser($user->id, $fixture['rechtsgrond_id']);
+test('go links page permits an authorized viewer to consult another user’s case', function () {
+    $caseOwner = User::factory()->create();
+    $fixture = createFollowGoicFixture($caseOwner);
+    $viewer = User::factory()->create();
+    grantFollowGoicRechtsgrondToUser($viewer->id, $fixture['rechtsgrond_id']);
 
     $dossierId = DB::table('dossiers')
         ->where('case_id', $fixture['case_id'])
@@ -638,7 +639,7 @@ test('go links page hides invalidated followed goics', function () {
     $transactieId = DB::table('transacties')->insertGetId([
         'case_id' => $fixture['case_id'],
         'transactie_soort_id' => DB::table('transactie_soorten')->orderBy('id')->value('id'),
-        'user_id' => $user->id,
+        'user_id' => $caseOwner->id,
         'created_at' => now(),
         'updated_at' => now(),
     ]);
@@ -693,6 +694,13 @@ test('go links page hides invalidated followed goics', function () {
     $graphService
         ->shouldReceive('query')
         ->once()
+        ->with(Mockery::on(fn (string $query): bool => str_contains($query, 'vwm:AfhankelijkeTB')
+            && str_contains($query, 'vwm:verwijstNaar')
+            && str_contains($query, $activeFollowGoicUri)))
+        ->andReturn([]);
+    $graphService
+        ->shouldReceive('query')
+        ->once()
         ->with(Mockery::on(fn (string $query): bool => str_contains($query, 'DataObjectAssociation')
             && str_contains($query, $activeFollowGoicUri)
             && ! str_contains($query, $invalidatedFollowGoicUri)))
@@ -701,11 +709,16 @@ test('go links page hides invalidated followed goics', function () {
     $this->instance(GraphService::class, $graphService);
 
     $this
-        ->actingAs($user)
-        ->get(route('cases.consult.go', ['go' => $fixture['go_uri']]))
+        ->actingAs($viewer)
+        ->get(route('cases.consult.go', [
+            'go' => $fixture['go_uri'],
+            'case' => $fixture['case_id'],
+            'origin_goic' => $activeFollowGoicId,
+        ]))
         ->assertOk()
         ->assertInertia(fn (Assert $page) => $page
             ->component('cases/GoLinks')
+            ->where('originGoicId', $activeFollowGoicId)
             ->where('goics.0.id', $activeFollowGoicId)
             ->missing('goics.1'),
         );

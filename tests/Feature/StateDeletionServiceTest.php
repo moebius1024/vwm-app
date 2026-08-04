@@ -24,6 +24,18 @@ it('limits cascade candidates to subclasses of ToestandsBeschrijving', function 
     expect($method->invoke($service, $goicUri))->toBe([]);
 });
 
+it('recognizes a dependent state from its semantic reference property', function () {
+    $service = app(StateDeletionService::class);
+    $method = new ReflectionMethod($service, 'isDependentStateData');
+
+    expect($method->invoke($service, json_encode([
+        'http://ontologie.politie.nl/def/vwm#verwijstNaar' => 'http://vwm.voorbeeld.nl/data/tb/source',
+    ])))->toBeTrue()
+        ->and($method->invoke($service, json_encode([
+            'http://ontologie.politie.nl/def/dpm#emailAddress' => 'persoon@example.test',
+        ])))->toBeFalse();
+});
+
 it('deletes a role state through the mutation endpoint', function () {
     $user = User::factory()->create();
     $now = now();

@@ -2,7 +2,11 @@
 
 namespace App\Http\Controllers;
 
+use App\Http\Requests\FindInOtherCaseRequest;
+use App\Services\FindInOtherCaseService;
 use App\Services\GraphService;
+use App\Services\SjabloonMetadataService;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -40,45 +44,48 @@ class CaseController extends Controller
             ->whereIn('rechtsgrond_id', $allowedRechtsgrondIds)
             ->orderBy('naam')
             ->get();
+        $selectedCaseSoortId = $request->integer('case_soort');
 
-        $latestMutationByCase = DB::table('object_mutaties')
-            ->join('transacties', 'transacties.id', '=', 'object_mutaties.transactie_id')
-            ->selectRaw('transacties.case_id, MAX(object_mutaties.id) AS latest_mutatie_id')
-            ->groupBy('transacties.case_id');
-
-        $casesQuery = DB::table('cases')
-            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
-            ->where('cases.user_id', $userId)
-            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
-            ->orderByDesc('cases.id');
-
-        if ($teamId !== null) {
-            $casesQuery
-                ->joinSub($latestMutationByCase, 'latest_case_mutaties', function ($join) {
-                    $join->on('latest_case_mutaties.case_id', '=', 'cases.id');
-                })
-                ->join('object_mutaties as latest_mutatie', 'latest_mutatie.id', '=', 'latest_case_mutaties.latest_mutatie_id')
-                ->join('transacties as latest_transactie', 'latest_transactie.id', '=', 'latest_mutatie.transactie_id')
-                ->join('medewerkers as latest_medewerker', 'latest_medewerker.user_id', '=', 'latest_transactie.user_id')
-                ->where('latest_medewerker.team_id', $teamId);
-        } else {
-            $casesQuery->whereRaw('1 = 0');
+        if (! $caseSoorten->pluck('id')->contains($selectedCaseSoortId)) {
+            $selectedCaseSoortId = null;
         }
 
-        $cases = $casesQuery->get([
-            'cases.id',
-            'cases.uuid',
-            'cases.case_soort_id',
-            'cases.created_at',
-            'case_soorten.naam as case_soort_naam',
-            'case_soorten.code as case_soort_code',
-        ]);
+        $visibleCases = $this->consultableCasesQuery($allowedRechtsgrondIds);
+        $cases = $teamId === null
+            ? collect()
+            : (clone $visibleCases)
+                ->when($mode === 'start', fn (Builder $query): Builder => $query->where('cases.user_id', $userId))
+                ->where('latest_medewerker.team_id', $teamId)
+                ->orderByDesc('cases.id')
+                ->get();
+
+        $otherTeamCases = collect();
+        if ($mode === 'consult' && $teamId !== null) {
+            $otherTeamCases = (clone $visibleCases)
+                ->where('latest_medewerker.team_id', '!=', $teamId)
+                ->orderBy('teams.naam')
+                ->orderByDesc('cases.id')
+                ->get()
+                ->groupBy('team_id')
+                ->map(function ($teamCases): array {
+                    $team = $teamCases->first();
+
+                    return [
+                        'id' => (int) $team->team_id,
+                        'naam' => (string) $team->team_naam,
+                        'cases' => $teamCases->values()->all(),
+                    ];
+                })
+                ->values();
+        }
 
         return Inertia::render('cases/Start', [
             'caseSoorten' => $caseSoorten,
             'cases' => $cases,
             'teamNaam' => $teamNaam,
             'mode' => $mode,
+            'selectedCaseSoortId' => $selectedCaseSoortId,
+            'otherTeamCases' => $otherTeamCases,
         ]);
     }
 
@@ -289,25 +296,18 @@ class CaseController extends Controller
         $this->purgeEmptyCasesForUser($userId);
         $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
         $caseId = $request->integer('case');
-        $followTargetCaseId = $request->integer('follow_target_case');
+        $followTargetCaseId = $request->query('follow_mode') === 'edit'
+            ? $request->integer('follow_target_case')
+            : 0;
         $goUri = trim((string) $request->query('go', ''));
 
         if (! $caseId && ! $followTargetCaseId && $goUri === '') {
             return $this->caseSelection($request, 'consult');
         }
 
-        $cases = DB::table('cases')
-            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
-            ->where('cases.user_id', $userId)
-            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+        $cases = $this->consultableCasesQuery($allowedRechtsgrondIds)
             ->orderByDesc('cases.created_at')
-            ->get([
-                'cases.id',
-                'cases.uuid',
-                'cases.created_at',
-                'case_soorten.naam as case_soort_naam',
-                'case_soorten.code as case_soort_code',
-            ]);
+            ->get();
 
         $activeCase = null;
         $dossiersOut = [];
@@ -332,15 +332,19 @@ class CaseController extends Controller
         ]);
     }
 
-    public function consultGo(Request $request): Response
+    public function consultGo(Request $request, SjabloonMetadataService $sjabloonMetadataService): Response
     {
         $validated = $request->validate([
             'go' => ['required', 'string'],
             'case' => ['nullable', 'integer'],
+            'origin_goic' => ['nullable', 'integer'],
+            'mode' => ['nullable', 'in:consult,edit'],
         ]);
 
         $goUri = trim((string) ($validated['go'] ?? ''));
         $selectedCaseId = isset($validated['case']) ? (int) $validated['case'] : null;
+        $originGoicId = isset($validated['origin_goic']) ? (int) $validated['origin_goic'] : null;
+        $originMode = ($validated['mode'] ?? null) === 'edit' ? 'edit' : 'consult';
 
         if (! $this->isAllowedHttpUri($goUri)) {
             abort(404);
@@ -357,7 +361,6 @@ class CaseController extends Controller
                 ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
                 ->join('cases', 'cases.id', '=', 'dossiers.case_id')
                 ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
-                ->where('cases.user_id', $userId)
                 ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
                 ->whereIn('gegevens_objecten_in_context.rdf_uri', $goicUris)
                 ->orderBy('cases.id')
@@ -373,6 +376,10 @@ class CaseController extends Controller
                     'case_soorten.naam as case_soort_naam',
                     'case_soorten.code as case_soort_code',
                 ]);
+        }
+
+        if ($originGoicId !== null && ($selectedCaseId === null || ! $goics->contains(fn (object $goic): bool => (int) $goic->goic_id === $originGoicId && (int) $goic->case_id === $selectedCaseId))) {
+            abort(404);
         }
 
         $goicMap = [];
@@ -405,6 +412,17 @@ class CaseController extends Controller
         }
         $tbDataByUri = $this->fetchTbDataByUris($tbUris);
         $tbAuditByUri = $this->fetchTbAuditMetaByUris($tbUris);
+        $alreadyFollowedSourceTbUris = $originGoicId !== null
+            ? $this->fetchFollowedSourceTbUris($goicUriById[$originGoicId] ?? null)
+            : [];
+        $tbClasses = collect($toestandenByGoicUri)
+            ->flatten(1)
+            ->pluck('tb_class')
+            ->filter(fn (mixed $tbClass): bool => is_string($tbClass) && $tbClass !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $tbCapabilities = $sjabloonMetadataService->fetchTbClassCapabilitiesByTbClasses($tbClasses);
 
         foreach ($goicMap as $goicId => &$entry) {
             $goicUri = $goicUriById[(int) $goicId] ?? null;
@@ -426,11 +444,14 @@ class CaseController extends Controller
                     'tb_class' => $row['tb_class'] ?? null,
                     'tb_data' => $tbDataByUri[$tbUri] ?? null,
                     'created_at' => is_array($audit) ? ($audit['created_at'] ?? null) : null,
+                    'can_follow_as_dependent' => $this->canFollowAsDependent($row['tb_class'] ?? null, $tbCapabilities),
+                    'already_followed_by_origin' => isset($alreadyFollowedSourceTbUris[$tbUri]),
                 ];
             }
         }
         unset($entry);
 
+        $this->attachDependentStateInfo($goicMap, $allowedRechtsgrondIds);
         $this->attachFollowInfoToGoics($goicMap);
 
         $goicsOut = array_values($goicMap);
@@ -451,8 +472,236 @@ class CaseController extends Controller
         return Inertia::render('cases/GoLinks', [
             'goUri' => $goUri,
             'selectedCaseId' => $selectedCaseId,
+            'originGoicId' => $originGoicId,
+            'originMode' => $originMode,
             'goics' => $goicsOut,
         ]);
+    }
+
+    /**
+     * Vind registraties in andere cases op basis van ontologie-metadata.
+     */
+    public function findInOtherCase(
+        FindInOtherCaseRequest $request,
+        FindInOtherCaseService $findInOtherCaseService,
+        SjabloonMetadataService $sjabloonMetadataService,
+    ): Response {
+        $validated = $request->validated();
+        $userId = (int) $request->user()->id;
+        $allowedRechtsgrondIds = $this->allowedRechtsgrondIdsForUser($userId);
+        $source = DB::table('gegevens_objecten_in_context')
+            ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
+            ->join('cases', 'cases.id', '=', 'dossiers.case_id')
+            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
+            ->where('gegevens_objecten_in_context.id', $validated['goic'])
+            ->where('cases.id', $validated['case'])
+            ->where('cases.user_id', $userId)
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+            ->first([
+                'gegevens_objecten_in_context.id',
+                'gegevens_objecten_in_context.rdf_uri',
+                'cases.id as case_id',
+            ]);
+
+        if (! $source || ! $this->isAllowedHttpUri($source->rdf_uri)) {
+            abort(404);
+        }
+
+        $searchMetadata = $findInOtherCaseService->searchMetadataForGoic($source->rdf_uri);
+        if ($searchMetadata === null) {
+            abort(404);
+        }
+
+        $query = trim($searchMetadata['search_value']);
+        $candidateUris = mb_strlen($query) >= 2
+            ? $findInOtherCaseService->findGoicsByValue($searchMetadata['target_class'], $searchMetadata['search_property'], $query)
+            : [];
+        $candidates = collect();
+
+        if ($candidateUris !== []) {
+            $candidates = DB::table('gegevens_objecten_in_context')
+                ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
+                ->join('cases', 'cases.id', '=', 'dossiers.case_id')
+                ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
+                ->where('cases.user_id', $userId)
+                ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+                ->where('cases.id', '!=', $source->case_id)
+                ->whereIn('gegevens_objecten_in_context.rdf_uri', $candidateUris)
+                ->orderByDesc('cases.id')
+                ->limit(50)
+                ->get([
+                    'gegevens_objecten_in_context.id',
+                    'gegevens_objecten_in_context.rdf_uri',
+                    'dossiers.id as dossier_id',
+                    'dossiers.naam as dossier_naam',
+                    'cases.id as case_id',
+                    'case_soorten.naam as case_soort_naam',
+                ]);
+        }
+
+        $candidateUris = $this->filterActiveGoicUris($candidates->pluck('rdf_uri')->all());
+        $candidates = $candidates->filter(fn (object $candidate): bool => in_array($candidate->rdf_uri, $candidateUris, true));
+        $goUris = $findInOtherCaseService->goUrisByGoicUris([
+            $source->rdf_uri,
+            ...$candidates->pluck('rdf_uri')->all(),
+        ]);
+
+        return Inertia::render('cases/FindInOtherCase', [
+            'caseSoortId' => isset($validated['case_soort']) ? (int) $validated['case_soort'] : null,
+            'source' => [
+                'caseId' => (int) $source->case_id,
+                'goicId' => (int) $source->id,
+                'goUri' => $goUris[$source->rdf_uri] ?? null,
+                'resultLabel' => $searchMetadata['result_label'] ?? 'Object',
+                'sameIdentityActionLabel' => $searchMetadata['same_identity_action_label'] ?? 'Zelfde registratie',
+                'alreadyLinkedLabel' => $searchMetadata['already_linked_label'] ?? 'Al gekoppeld via Verwijzing',
+            ],
+            'query' => $query,
+            'searched' => mb_strlen($query) >= 2,
+            'candidates' => $this->attachToestandSortRanksToFindCandidates(
+                $this->attachDependentStateInfoToFindCandidates(
+                    $this->buildFindInOtherCaseCandidates($candidates->all(), $goUris[$source->rdf_uri] ?? null, $goUris),
+                    $userId,
+                    $allowedRechtsgrondIds,
+                ),
+                $sjabloonMetadataService,
+            ),
+        ]);
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $candidates
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachToestandSortRanksToFindCandidates(
+        array $candidates,
+        SjabloonMetadataService $sjabloonMetadataService,
+    ): array {
+        $tbClasses = collect($candidates)
+            ->pluck('toestanden')
+            ->flatten(1)
+            ->pluck('tb_class')
+            ->filter(fn (mixed $tbClass): bool => is_string($tbClass) && $tbClass !== '')
+            ->unique()
+            ->values()
+            ->all();
+        $capabilitiesByTbClass = $sjabloonMetadataService->fetchTbClassCapabilitiesByTbClasses($tbClasses);
+
+        foreach ($candidates as &$candidate) {
+            foreach ($candidate['toestanden'] as &$toestand) {
+                $capabilities = $capabilitiesByTbClass[$toestand['tb_class'] ?? ''] ?? [];
+                $toestand['presentation_sort_rank'] = ($capabilities['is_kern_tb'] ?? false)
+                    ? 0
+                    : (($capabilities['is_role_beschrijving'] ?? false) ? 1 : 2);
+            }
+            unset($toestand);
+        }
+        unset($candidate);
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $candidates
+     * @param  array<int, int>  $allowedRechtsgrondIds
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachDependentStateInfoToFindCandidates(array $candidates, int $userId, array $allowedRechtsgrondIds): array
+    {
+        $goicMap = [];
+        foreach ($candidates as $index => $candidate) {
+            $goicMap[$index] = [
+                'toestanden' => $candidate['toestanden'] ?? [],
+            ];
+        }
+
+        $this->attachDependentStateInfo($goicMap, $allowedRechtsgrondIds);
+
+        foreach ($candidates as $index => &$candidate) {
+            $candidate['toestanden'] = $goicMap[$index]['toestanden'];
+        }
+        unset($candidate);
+
+        return $candidates;
+    }
+
+    /**
+     * @param  array<int, object>  $candidates
+     * @param  array<string, string>  $goUris
+     * @return array<int, array<string, mixed>>
+     */
+    private function buildFindInOtherCaseCandidates(array $candidates, ?string $sourceGoUri, array $goUris): array
+    {
+        $uris = array_values(array_filter(array_map(fn (object $candidate): string => $candidate->rdf_uri, $candidates)));
+        $toestandenByGoicUri = $this->fetchActiveToestandenByGoicUris($uris);
+        $tbUris = [];
+        foreach ($toestandenByGoicUri as $toestanden) {
+            foreach ($toestanden as $toestand) {
+                if (is_string($toestand['tb_rdf_uri'] ?? null)) {
+                    $tbUris[] = $toestand['tb_rdf_uri'];
+                }
+            }
+        }
+        $tbDataByUri = $this->fetchTbDataByUris($tbUris);
+        $tbAuditByUri = $this->fetchTbAuditMetaByUris($tbUris);
+
+        return array_map(function (object $candidate) use ($toestandenByGoicUri, $tbDataByUri, $tbAuditByUri, $sourceGoUri, $goUris): array {
+            $toestanden = array_map(function (array $toestand) use ($tbDataByUri, $tbAuditByUri): array {
+                $tbUri = $toestand['tb_rdf_uri'];
+                $audit = $tbAuditByUri[$tbUri] ?? [];
+
+                return [
+                    'tb_rdf_uri' => $tbUri,
+                    'tb_class' => $toestand['tb_class'] ?? null,
+                    'tb_data' => $tbDataByUri[$tbUri] ?? [],
+                    'created_at' => $audit['created_at'] ?? null,
+                ];
+            }, $toestandenByGoicUri[$candidate->rdf_uri] ?? []);
+            $candidateGoUri = $goUris[$candidate->rdf_uri] ?? null;
+
+            return [
+                'id' => (int) $candidate->id,
+                'rdf_uri' => $candidate->rdf_uri,
+                'case_id' => (int) $candidate->case_id,
+                'case_soort_naam' => $candidate->case_soort_naam,
+                'dossier_naam' => $candidate->dossier_naam,
+                'same_go' => $sourceGoUri !== null && $sourceGoUri === $candidateGoUri,
+                'go_uri' => $candidateGoUri,
+                'toestanden' => $toestanden,
+            ];
+        }, $candidates);
+    }
+
+    /**
+     * @param  array<int, int>  $allowedRechtsgrondIds
+     */
+    private function consultableCasesQuery(array $allowedRechtsgrondIds): Builder
+    {
+        $latestMutationByCase = DB::table('object_mutaties')
+            ->join('transacties', 'transacties.id', '=', 'object_mutaties.transactie_id')
+            ->selectRaw('transacties.case_id, MAX(object_mutaties.id) AS latest_mutatie_id')
+            ->groupBy('transacties.case_id');
+
+        return DB::table('cases')
+            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
+            ->joinSub($latestMutationByCase, 'latest_case_mutaties', function ($join): void {
+                $join->on('latest_case_mutaties.case_id', '=', 'cases.id');
+            })
+            ->join('object_mutaties as latest_mutatie', 'latest_mutatie.id', '=', 'latest_case_mutaties.latest_mutatie_id')
+            ->join('transacties as latest_transactie', 'latest_transactie.id', '=', 'latest_mutatie.transactie_id')
+            ->join('medewerkers as latest_medewerker', 'latest_medewerker.user_id', '=', 'latest_transactie.user_id')
+            ->join('teams', 'teams.id', '=', 'latest_medewerker.team_id')
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+            ->select([
+                'cases.id',
+                'cases.uuid',
+                'cases.case_soort_id',
+                'cases.created_at',
+                'case_soorten.naam as case_soort_naam',
+                'case_soorten.code as case_soort_code',
+                'latest_medewerker.team_id',
+                'teams.naam as team_naam',
+            ]);
     }
 
     /**
@@ -473,6 +722,22 @@ class CaseController extends Controller
             ->all();
 
         return ! empty($ids) ? $ids : [-1];
+    }
+
+    /**
+     * @param  array<string, array{is_kern_tb:bool,is_role_beschrijving:bool}>  $tbCapabilities
+     */
+    private function canFollowAsDependent(mixed $tbClass, array $tbCapabilities): bool
+    {
+        if (! is_string($tbClass) || $tbClass === '') {
+            return false;
+        }
+
+        $capabilities = $tbCapabilities[$tbClass] ?? null;
+
+        return is_array($capabilities)
+            && ! ($capabilities['is_kern_tb'] ?? true)
+            && ! ($capabilities['is_role_beschrijving'] ?? true);
     }
 
     private function buildIncidentRequirementTriple(string $dossierUri, bool $requiresIncidentInDossier): string
@@ -508,7 +773,7 @@ class CaseController extends Controller
                 'created_at',
             ]);
 
-        $visibleGoicUris = $this->fetchVisibleGoicUrisForUser($userId, $allowedRechtsgrondIds);
+        $visibleGoicUris = $this->fetchVisibleGoicUrisForUser($allowedRechtsgrondIds);
         $activeVisibleGoicUris = $this->filterActiveGoicUris($visibleGoicUris);
         $goLinkMetaByUri = $this->fetchGoLinkMetaByGoicUris(
             $goics
@@ -573,6 +838,7 @@ class CaseController extends Controller
         }
         unset($entry);
 
+        $this->attachDependentStateInfo($goicMap, $allowedRechtsgrondIds);
         $this->attachFollowInfoToGoics($goicMap);
 
         $dossiersOut = [];
@@ -592,6 +858,178 @@ class CaseController extends Controller
         }
 
         return $dossiersOut;
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $goicMap
+     * @param  array<int, int>  $allowedRechtsgrondIds
+     */
+    private function attachDependentStateInfo(array &$goicMap, array $allowedRechtsgrondIds): void
+    {
+        $sourceTbUris = [];
+        foreach ($goicMap as $goic) {
+            foreach ($goic['toestanden'] ?? [] as $toestand) {
+                $sourceTbUri = $this->referencedTbUri($toestand);
+                if ($sourceTbUri !== null) {
+                    $sourceTbUris[] = $sourceTbUri;
+                }
+            }
+        }
+
+        $sourceTbUris = array_values(array_unique($sourceTbUris));
+        if ($sourceTbUris === []) {
+            return;
+        }
+
+        $sourceMetaByTbUri = $this->fetchSourceTbMetadata($sourceTbUris);
+        if ($sourceMetaByTbUri === []) {
+            return;
+        }
+
+        $sourceGoicUris = array_values(array_unique(array_filter(array_column($sourceMetaByTbUri, 'goic_uri'))));
+        $visibleSourceGoics = DB::table('gegevens_objecten_in_context')
+            ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
+            ->join('cases', 'cases.id', '=', 'dossiers.case_id')
+            ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
+            ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
+            ->whereIn('gegevens_objecten_in_context.rdf_uri', $sourceGoicUris)
+            ->get([
+                'gegevens_objecten_in_context.id as goic_id',
+                'gegevens_objecten_in_context.rdf_uri as goic_uri',
+                'cases.id as case_id',
+            ]);
+        $sourceGoicByUri = [];
+        foreach ($visibleSourceGoics as $sourceGoic) {
+            $sourceGoicByUri[(string) $sourceGoic->goic_uri] = [
+                'id' => (int) $sourceGoic->goic_id,
+                'case_id' => (int) $sourceGoic->case_id,
+            ];
+        }
+
+        $visibleSourceTbUris = array_keys(array_filter($sourceMetaByTbUri, fn (array $source): bool => isset($sourceGoicByUri[$source['goic_uri']])));
+        $sourceTbDataByUri = $this->fetchTbDataByUris($visibleSourceTbUris);
+        $sourceTbAuditByUri = $this->fetchTbAuditMetaByUris($visibleSourceTbUris);
+
+        foreach ($goicMap as &$goic) {
+            foreach ($goic['toestanden'] as &$toestand) {
+                $sourceTbUri = $this->referencedTbUri($toestand);
+                $sourceMeta = $sourceTbUri !== null ? ($sourceMetaByTbUri[$sourceTbUri] ?? null) : null;
+                if (! is_array($sourceMeta)) {
+                    continue;
+                }
+
+                $sourceGoic = $sourceGoicByUri[$sourceMeta['goic_uri']] ?? null;
+                $sourceAudit = $sourceTbAuditByUri[$sourceTbUri] ?? null;
+                $toestand['dependent_info'] = [
+                    'is_dependent' => true,
+                    'source_tb_uri' => $sourceTbUri,
+                    'source_goic_uri' => $sourceMeta['goic_uri'],
+                    'source_goic_id' => is_array($sourceGoic) ? $sourceGoic['id'] : null,
+                    'source_case_id' => is_array($sourceGoic) ? $sourceGoic['case_id'] : null,
+                    'source_target_class' => $sourceMeta['target_class'] ?? null,
+                    'source_state' => is_array($sourceGoic) ? [
+                        'mutatie_id' => is_array($sourceAudit) ? ($sourceAudit['mutatie_id'] ?? null) : null,
+                        'sjabloon_uri' => is_array($sourceAudit) ? ($sourceAudit['sjabloon_uri'] ?? null) : $sourceMeta['tb_class'],
+                        'tb_id' => is_array($sourceAudit) ? ($sourceAudit['tb_id'] ?? null) : null,
+                        'tb_rdf_uri' => $sourceTbUri,
+                        'tb_class' => $sourceMeta['tb_class'],
+                        'tb_data' => $sourceTbDataByUri[$sourceTbUri] ?? null,
+                        'created_at' => is_array($sourceAudit) ? ($sourceAudit['created_at'] ?? null) : null,
+                    ] : null,
+                ];
+            }
+            unset($toestand);
+        }
+        unset($goic);
+    }
+
+    private function referencedTbUri(array $toestand): ?string
+    {
+        $data = $toestand['tb_data'] ?? null;
+        if (! is_array($data)) {
+            return null;
+        }
+
+        foreach ($data as $property => $value) {
+            if (! is_string($property) || ! str_ends_with($property, '#verwijstNaar')) {
+                continue;
+            }
+            if (is_string($value) && $this->isAllowedHttpUri($value)) {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<int, string>  $sourceTbUris
+     * @return array<string, array{goic_uri:string,tb_class:string,target_class:string|null}>
+     */
+    private function fetchSourceTbMetadata(array $sourceTbUris): array
+    {
+        $result = [];
+        $graph = app(GraphService::class);
+        foreach (array_chunk($sourceTbUris, 100) as $chunk) {
+            $iriList = implode(' ', array_map(fn (string $uri): string => "<{$uri}>", $chunk));
+            $rows = $graph->query("
+                PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+                PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+                SELECT ?tb ?goic ?tbClass ?targetClass
+                WHERE {
+                    VALUES ?tb { {$iriList} }
+                    ?tb a ?tbClass ; vwm:beschrijftGOIC ?goic .
+                    OPTIONAL { ?goic vwm:heeftDoelClass ?targetClass . }
+                    FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
+                }
+            ");
+            foreach ($rows as $row) {
+                $tbUri = $row['tb'] ?? null;
+                $goicUri = $row['goic'] ?? null;
+                $tbClass = $row['tbClass'] ?? null;
+                $targetClass = $row['targetClass'] ?? null;
+                if (! is_string($tbUri) || ! is_string($goicUri) || ! is_string($tbClass) || ! $this->isAllowedHttpUri($tbUri) || ! $this->isAllowedHttpUri($goicUri) || $tbClass === '') {
+                    continue;
+                }
+                $result[$tbUri] = [
+                    'goic_uri' => $goicUri,
+                    'tb_class' => $tbClass,
+                    'target_class' => is_string($targetClass) && $targetClass !== '' ? $targetClass : null,
+                ];
+            }
+        }
+
+        return $result;
+    }
+
+    /** @return array<string, true> */
+    private function fetchFollowedSourceTbUris(?string $targetGoicUri): array
+    {
+        if (! is_string($targetGoicUri) || ! $this->isAllowedHttpUri($targetGoicUri)) {
+            return [];
+        }
+
+        $rows = app(GraphService::class)->query("
+            PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
+            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            SELECT ?sourceTb
+            WHERE {
+                ?dependent a vwm:AfhankelijkeTB ;
+                    vwm:beschrijftGOIC <{$targetGoicUri}> ;
+                    vwm:verwijstNaar ?sourceTb .
+                FILTER NOT EXISTS { ?dependent dpm:invalidatedAtTime ?invalidatedAt . }
+            }
+        ");
+
+        $result = [];
+        foreach ($rows as $row) {
+            $sourceTbUri = $row['sourceTb'] ?? null;
+            if (is_string($sourceTbUri) && $this->isAllowedHttpUri($sourceTbUri)) {
+                $result[$sourceTbUri] = true;
+            }
+        }
+
+        return $result;
     }
 
     /**
@@ -1027,13 +1465,12 @@ class CaseController extends Controller
      * @param  array<int, int>  $allowedRechtsgrondIds
      * @return array<int, string>
      */
-    private function fetchVisibleGoicUrisForUser(int $userId, array $allowedRechtsgrondIds): array
+    private function fetchVisibleGoicUrisForUser(array $allowedRechtsgrondIds): array
     {
         return DB::table('gegevens_objecten_in_context')
             ->join('dossiers', 'dossiers.id', '=', 'gegevens_objecten_in_context.dossier_id')
             ->join('cases', 'cases.id', '=', 'dossiers.case_id')
             ->join('case_soorten', 'case_soorten.id', '=', 'cases.case_soort_id')
-            ->where('cases.user_id', $userId)
             ->whereIn('case_soorten.rechtsgrond_id', $allowedRechtsgrondIds)
             ->pluck('gegevens_objecten_in_context.rdf_uri')
             ->filter(fn ($uri) => is_string($uri) && $uri !== '')

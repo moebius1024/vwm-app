@@ -8,6 +8,8 @@ vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:PersoonsBeschrijving ;
   ui:buttonLabelRegister "Persoon" ;
   ui:buttonLabelAttach "PersoonBeschrijving" ;
+  ui:sameIdentityActionLabel "Zelfde persoon" ;
+  ui:alreadyLinkedLabel "Al gekoppeld via Verwijzing" ;
   sh:property [
     sh:path dpm:lastName ;
     sh:datatype xsd:string ;
@@ -19,6 +21,7 @@ vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
     sh:datatype xsd:integer ;
     sh:minCount 1 ;
     sh:order 2 ;
+    ui:primaryDisplayIdentifier true ;
   ] ;
   sh:property [
     sh:path dpm:birthDate ;
@@ -26,6 +29,9 @@ vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
     sh:minCount 1 ;
     sh:order 3 ;
   ] .
+
+vwm:PersoonsBeschrijving vwm:isFindableInOtherCase true .
+vwm:PersoonsBeschrijving vwm:searchProperty dpm:lastName .
 
 vwm:ContactGegevensShape a sh:NodeShape ;
   sh:targetClass vwm:ContactGegevens ;
@@ -42,6 +48,16 @@ vwm:ContactGegevensShape a sh:NodeShape ;
     sh:order 2 ;
   ] .
 
+vwm:AfhankelijkeTBShape a sh:NodeShape ;
+  sh:targetClass vwm:AfhankelijkeTB ;
+  sh:property [
+    sh:path vwm:verwijstNaar ;
+    sh:nodeKind sh:IRI ;
+    sh:class vwm:ToestandsBeschrijving ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
+  ] .
+
 vwm:IncidentBeschrijvingShape a sh:NodeShape ;
   sh:targetClass vwm:IncidentBeschrijving ;
   sh:property [
@@ -49,12 +65,17 @@ vwm:IncidentBeschrijvingShape a sh:NodeShape ;
     sh:datatype xsd:string ;
     sh:minCount 1 ;
     sh:order 1 ;
+    ui:primaryDisplayIdentifier true ;
+    ui:primaryDisplayOrder 1 ;
   ] ;
   sh:property [
     sh:path dpm:timestamp ;
     sh:datatype xsd:dateTime ;
     sh:minCount 1 ;
     sh:order 2 ;
+    ui:primaryDisplayIdentifier true ;
+    ui:primaryDisplayOrder 2 ;
+    ui:primaryDisplayLabel "Tijd" ;
   ] .
 
 vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
@@ -64,6 +85,7 @@ vwm:OndernemingsBeschrijvingShape a sh:NodeShape ;
     sh:datatype xsd:string ;
     sh:minCount 1 ;
     sh:order 1 ;
+    ui:primaryDisplayIdentifier true ;
   ] ;
   sh:property [
     sh:path dpm:legalForm ;
@@ -159,12 +181,18 @@ vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
     sh:order 1 ;
     vwm:isIdentityKey true ;
     vwm:identityNormalizer "ALNUM_UPPER" ;
+    ui:primaryDisplayIdentifier true ;
     ui:lookupEndpoint "/api/voertuig/kenteken" ;
     ui:lookupQueryParam "kenteken" ;
     ui:lookupTrigger "input" ;
     ui:lookupDebounceMs 500 ;
     ui:lookupMinLength 6 ;
-  ] .
+  ] ;
+  ui:sameIdentityActionLabel "Zelfde voertuig" ;
+  ui:alreadyLinkedLabel "Al gekoppeld via Verwijzing" .
+
+vwm:VoertuigBeschrijving vwm:isFindableInOtherCase true .
+vwm:VoertuigBeschrijving vwm:searchProperty dpm:licensePlate .
 
 vwm:IncidentToestandsWeergaveShape a sh:NodeShape ;
   sh:targetClass vwm:IncidentToestandsWeergave ;

@@ -67,7 +67,7 @@ class CaseMutationContextService
     /**
      * @return array{case?: object, transactie_soort_id?: int, reason?: string}
      */
-    public function resolveUnfollowContext(int $caseId, int $userId): array
+    public function resolveTransactionContext(int $caseId, int $userId): array
     {
         $case = $this->caseAccessService->findUserCase($caseId, $userId, ['id', 'case_soort_id']);
         if (! $case) {
@@ -86,5 +86,13 @@ class CaseMutationContextService
             'case' => $case,
             'transactie_soort_id' => $transactieSoortId,
         ];
+    }
+
+    /**
+     * @return array{case?: object, transactie_soort_id?: int, reason?: string}
+     */
+    public function resolveUnfollowContext(int $caseId, int $userId): array
+    {
+        return $this->resolveTransactionContext($caseId, $userId);
     }
 }

@@ -3,6 +3,8 @@ import { Link } from '@inertiajs/vue3';
 import axios from 'axios';
 import { ref, watch } from 'vue';
 import { toestandSortRank } from '@/lib/toestandSort';
+import { findInOtherCase } from '@/routes/cases';
+import { go as consultGo } from '@/routes/cases/consult';
 
 type ToestandItem = {
   mutatie_id: number;
@@ -12,6 +14,13 @@ type ToestandItem = {
   tb_class: string | null;
   tb_data: Record<string, unknown> | string | null;
   created_at: string;
+  dependent_info?: {
+    is_dependent?: boolean;
+    source_goic_id?: number | null;
+    source_case_id?: number | null;
+    source_target_class?: string | null;
+    source_state?: ToestandItem | null;
+  } | null;
 };
 
 type GoicItem = {
@@ -45,6 +54,7 @@ type Props = {
   dossiers?: DossierItem[];
   transactieSoortId?: number | null;
   caseId?: number | null;
+  caseSoortId?: number | null;
   mutationTarget?: {
     goic_id: number;
     mutatie_id: number;
@@ -60,6 +70,8 @@ type TbClassCapabilities = {
   is_signalement?: boolean;
   is_beschrijving?: boolean;
   is_role_beschrijving?: boolean;
+  is_findable_in_other_case?: boolean;
+  search_property?: string | null;
 };
 
 const props = defineProps<Props>();
@@ -79,7 +91,7 @@ const goicDisplayMap = ref<Record<string, string>>({});
 const goDisplayMap = ref<Record<string, string>>({});
 const goicDisplayByTail = ref<Record<string, string>>({});
 const remoteGoicDisplayMap = ref<Record<string, string>>({});
-const identifierMap = ref<Record<string, { describedClass: string; properties: string[] }>>({});
+const identifierMap = ref<Record<string, { describedClass: string; properties: string[]; primaryDisplayProperties: Array<{ property: string; label: string | null }> }>>({});
 const describedClassByTbClass = ref<Record<string, string>>({});
 const fieldOrderByTbClass = ref<Record<string, Record<string, number>>>({});
 const classOrder = ref<Record<string, number>>({});
@@ -102,13 +114,14 @@ const goLinksHref = (goic: GoicItem) => {
     return '#';
   }
 
-  const params = new URLSearchParams({ go: goic.go_uri });
-
-  if (props.caseId) {
-    params.set('case', String(props.caseId));
-  }
-
-  return `/raadplegen/go?${params.toString()}`;
+  return consultGo.url({
+    query: {
+      go: goic.go_uri,
+      case: props.caseId ?? undefined,
+      origin_goic: goic.id,
+      mode: 'edit',
+    },
+  });
 };
 
 const isUri = (value: unknown): value is string =>
@@ -341,8 +354,14 @@ return;
       const display = readableIdentifier
         ? `${classLabel} #${goic.id}, ${readableIdentifier}`
         : `${classLabel} #${goic.id}`;
-      const vehicleOnlyIdentifier = describedClass === 'http://ontologie.politie.nl/def/dpm#Vehicle' && identifierValue;
-      const finalDisplay = vehicleOnlyIdentifier ? identifierValue : display;
+      const primaryDisplayParts = idConfig?.primaryDisplayProperties.map(({ property, label }) => {
+        const value = (lastTb.tb_data as Record<string, unknown>)[property];
+
+        return value === null || value === undefined || value === '' ? null : `${label ?? shortId(property)} ${formatValue(value)}`;
+      }) ?? [];
+      const finalDisplay = primaryDisplayParts.length > 0 && primaryDisplayParts.every((part) => part !== null)
+        ? primaryDisplayParts.join(' ')
+        : display;
       map[goic.rdf_uri] = finalDisplay;
       tailMap[shortId(goic.rdf_uri)] = finalDisplay;
 
@@ -401,6 +420,26 @@ return null;
   const idConfig = identifierMap.value[tb.tb_class];
 
   return idConfig?.describedClass ?? describedClassByTbClass.value[tb.tb_class] ?? null;
+};
+
+const canFindInOtherCase = (goic: GoicItem) => goic.toestanden.some((tb) => (
+  !!tb.tb_class && tbClassCapabilitiesMap.value[tb.tb_class]?.is_findable_in_other_case === true
+));
+
+const findInOtherCaseHref = (goic: GoicItem) => {
+  for (const tb of goic.toestanden) {
+    const property = tb.tb_class ? tbClassCapabilitiesMap.value[tb.tb_class]?.search_property : null;
+    if (!property || !tb.tb_data || typeof tb.tb_data !== 'object' || Array.isArray(tb.tb_data)) {
+      continue;
+    }
+    for (const [key, value] of tbEntries(tb)) {
+      if (key === property && typeof value === 'string' && value.trim() !== '') {
+        return findInOtherCase({ query: { case: props.caseId, goic: goic.id, case_soort: props.caseSoortId } });
+      }
+    }
+  }
+
+  return null;
 };
 
 const isRoleTbClass = (tbClass: string) => tbClass.toLowerCase().includes('rol');
@@ -689,7 +728,24 @@ const visibleTbEntries = (tb: ToestandItem, goic: GoicItem): [string, unknown][]
     return [];
   }
 
-  return tbEntries(tb).filter(([key, value]) => !shouldSkipFieldForGoic(String(key), value, goic));
+  return tbEntries(dependentSourceState(tb) ?? tb).filter(([key, value]) => !shouldSkipFieldForGoic(String(key), value, goic));
+};
+
+const isDependentToestand = (tb: ToestandItem) => tb.dependent_info?.is_dependent === true;
+
+const dependentSourceState = (tb: ToestandItem) => tb.dependent_info?.source_state ?? null;
+
+const dependentSourceSummary = (tb: ToestandItem) => {
+  const targetClass = tb.dependent_info?.source_target_class;
+  const sourceGoicId = tb.dependent_info?.source_goic_id;
+  const sourceCaseId = tb.dependent_info?.source_case_id;
+  if (!targetClass || !sourceGoicId || !sourceCaseId) {
+    return 'Van bronbeschrijving';
+  }
+
+  const label = labelFor(targetClass) ?? shortId(targetClass);
+
+  return `Van ${label} #${sourceGoicId}, Case #${sourceCaseId}`;
 };
 
 const visibleToestanden = (goic: GoicItem) => {
@@ -813,6 +869,10 @@ const selectMutate = (goic: GoicItem, tb: ToestandItem) => {
 };
 
 const canMutate = (tb: ToestandItem) => {
+  if (isDependentToestand(tb)) {
+    return false;
+  }
+
   if (isRoleToestand(tb)) {
     return false;
   }
@@ -824,6 +884,10 @@ const canMutate = (tb: ToestandItem) => {
 };
 
 const canDelete = (tb: ToestandItem) => {
+  if (isDependentToestand(tb)) {
+    return true;
+  }
+
   if (isRoleToestand(tb)) {
     const roleTypeUri = getRoleTypeUri(tb);
 
@@ -885,7 +949,11 @@ const isToestandsWeergaveToestand = (tb: ToestandItem) => {
 
 const deleteToestand = async (goic: GoicItem, tb: ToestandItem) => {
   const ok = typeof window !== 'undefined'
-    ? window.confirm('Toestand verwijderen?\n\nJe staat op het punt deze toestandsbeschrijving te beëindigen. Dit kan niet ongedaan worden gemaakt.')
+    ? window.confirm(
+      isDependentToestand(tb)
+        ? 'Gevolgde beschrijving verwijderen?\n\nAlleen de afhankelijke beschrijving wordt beëindigd. De bronbeschrijving blijft bestaan.'
+        : 'Toestand verwijderen?\n\nJe staat op het punt deze toestandsbeschrijving te beëindigen. Dit kan niet ongedaan worden gemaakt.',
+    )
     : false;
 
   if (!ok) {
@@ -964,6 +1032,10 @@ const collectUris = (dossiers: DossierItem[]) => {
   dossiers.forEach((dossier) => {
     dossier.goics.forEach((goic) => {
       goic.toestanden.forEach((tb) => {
+        if (tb.dependent_info?.source_target_class) {
+          set.add(tb.dependent_info.source_target_class);
+        }
+
         if (tb.tb_class) {
 set.add(tb.tb_class);
 }
@@ -1190,12 +1262,13 @@ const loadLabels = async () => {
   try {
     const identifiersResponse = await axios.get(apiUrl('/api/identifiers'));
     const list = identifiersResponse.data.identifiers ?? [];
-    const map: Record<string, { describedClass: string; properties: string[] }> = {};
-    list.forEach((row: { tb_class: string; described_class: string; properties: string[] }) => {
+    const map: Record<string, { describedClass: string; properties: string[]; primaryDisplayProperties: Array<{ property: string; label: string | null }> }> = {};
+    list.forEach((row: { tb_class: string; described_class: string; properties: string[]; primary_display_properties?: Array<{ property: string; label: string | null }> }) => {
       if (row.tb_class) {
         map[row.tb_class] = {
           describedClass: row.described_class,
           properties: row.properties ?? [],
+          primaryDisplayProperties: row.primary_display_properties ?? [],
         };
       }
     });
@@ -1243,13 +1316,22 @@ watch(() => props.transactieSoortId, () => {
                 <span v-if="goicClassLabel(goic)">{{ goicClassLabel(goic) }} (#{{ goic.id }})</span>
                 <span v-else>GOIC #{{ goic.id }}</span>
               </div>
-              <Link
-                v-if="hasLinkedGoics(goic)"
-                :href="goLinksHref(goic)"
-                class="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800 transition hover:bg-indigo-100 dark:border-indigo-300/30 dark:bg-indigo-900/30 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
-              >
-                Gekoppelde Registraties ({{ linkedOthersCount(goic) }})
-              </Link>
+              <div class="flex flex-wrap items-center justify-end gap-2">
+                <Link
+                  v-if="canFindInOtherCase(goic) && findInOtherCaseHref(goic)"
+                  :href="findInOtherCaseHref(goic)!"
+                  class="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-800 transition hover:bg-sky-100 dark:border-sky-300/30 dark:bg-sky-900/30 dark:text-sky-100 dark:hover:bg-sky-900/50"
+                >
+                  Vind in andere case
+                </Link>
+                <Link
+                  v-if="hasLinkedGoics(goic)"
+                  :href="goLinksHref(goic)"
+                  class="inline-flex items-center rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-800 transition hover:bg-indigo-100 dark:border-indigo-300/30 dark:bg-indigo-900/30 dark:text-indigo-100 dark:hover:bg-indigo-900/50"
+                >
+                  Gekoppelde Registraties ({{ linkedOthersCount(goic) }})
+                </Link>
+              </div>
             </div>
 
             <div v-if="visibleToestanden(goic).length || visibleFollowSourceEntries(goic).length" class="mt-3 space-y-2">
@@ -1292,7 +1374,7 @@ watch(() => props.transactieSoortId, () => {
                           Bekijk bestand
                         </a>
                       </span>
-                      <span v-else class="break-all">{{ formatValue(value) }}</span>
+                      <span v-else class="break-all">{{ formatFieldValue(String(key), value) }}</span>
                     </div>
                   </template>
                 </div>
@@ -1310,6 +1392,12 @@ watch(() => props.transactieSoortId, () => {
               >
                 <div class="mt-1 flex items-start justify-between gap-3">
                   <div class="min-w-0 flex-1">
+                    <div
+                      v-if="isDependentToestand(tb)"
+                      class="mb-3 rounded-md border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900 dark:border-indigo-400/30 dark:bg-indigo-900/20 dark:text-indigo-100"
+                    >
+                      {{ dependentSourceSummary(tb) }}
+                    </div>
                     <span v-if="isMutationActive(goic, tb)" class="mb-1 inline-block text-[11px] font-semibold text-amber-700 dark:text-amber-300">(muteren)</span>
                     <div v-if="visibleTbEntries(tb, goic).length" class="space-y-1 text-xs text-gray-700 dark:text-gray-200">
                       <template v-for="([key, value]) in visibleTbEntries(tb, goic)" :key="key">

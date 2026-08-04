@@ -60,7 +60,8 @@ it('returns children for an expanded goods tree branch', function () {
         ->assertJsonPath('concepten.0.has_children', false)
         ->assertJsonPath('concepten.0.selectable', true);
 
-    Http::assertSent(fn ($request) => str_contains($request['query'], "skos:broader <{$parent}>"));
+    Http::assertSent(fn ($request) => $request->method() === 'POST'
+        && str_contains($request['query'], "skos:broader <{$parent}>"));
 });
 
 it('resolves labels from the goods terminology for the consult view', function () {
@@ -85,7 +86,8 @@ it('resolves labels from the goods terminology for the consult view', function (
         ->assertSuccessful()
         ->assertJsonFragment([$concept => 'Koffie en thee']);
 
-    Http::assertSent(fn ($request) => str_contains($request['query'], "VALUES ?concept { <{$concept}> }"));
+    Http::assertSent(fn ($request) => $request->method() === 'POST'
+        && str_contains($request['query'], "VALUES ?concept { <{$concept}> }"));
 });
 
 it('rejects reference concepts outside the configured goods scheme', function () {

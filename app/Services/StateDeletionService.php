@@ -32,6 +32,7 @@ class StateDeletionService
             ->first([
                 'object_mutaties.id as mutatie_id',
                 'object_mutaties.sjabloon_uri as tb_class',
+                'object_mutaties.data as tb_data',
                 'toestands_beschrijvingen.id as tb_id',
                 'toestands_beschrijvingen.rdf_uri as tb_uri',
                 'gegevens_objecten_in_context.id as goic_id',
@@ -51,7 +52,10 @@ class StateDeletionService
             if ($this->roleMutationService->isRoleTbClass((string) ($targetRow->tb_class ?? ''), $roleShapeRules)) {
                 return $this->result(['error' => 'Gebruik rol-verwijderen voor roltoestanden.'], 422);
             }
-            if (! $this->isClassDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''))) {
+            if (
+                ! $this->isDependentStateData((string) ($targetRow->tb_data ?? ''))
+                && ! $this->isClassDeleteAllowed((int) $base['transactie_soort_id'], (string) ($targetRow->tb_class ?? ''))
+            ) {
                 return $this->result(['error' => 'Verwijderen niet toegestaan voor dit sjabloon in deze transactie.'], 422);
             }
         }
@@ -336,5 +340,26 @@ class StateDeletionService
         $allowed = $this->roleMutationService->fetchAllowedSjabloonCrudByTbClass($transactieSoortId);
 
         return $this->roleMutationService->hasCrud($allowed[$tbClass] ?? null, 'D');
+    }
+
+    private function isDependentStateData(string $data): bool
+    {
+        $properties = json_decode($data, true);
+        if (! is_array($properties)) {
+            return false;
+        }
+
+        foreach ($properties as $property => $value) {
+            if (
+                is_string($property)
+                && str_ends_with($property, '#verwijstNaar')
+                && is_string($value)
+                && filter_var($value, FILTER_VALIDATE_URL) !== false
+            ) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

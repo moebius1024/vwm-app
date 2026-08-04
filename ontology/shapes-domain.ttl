@@ -24,6 +24,9 @@ vwm:PersoonsBeschrijvingShape a sh:NodeShape ;
     sh:order 3 ;
   ] .
 
+vwm:PersoonsBeschrijving vwm:isFindableInOtherCase true .
+vwm:PersoonsBeschrijving vwm:searchProperty dpm:lastName .
+
 vwm:ContactGegevensShape a sh:NodeShape ;
   sh:targetClass vwm:ContactGegevens ;
   sh:property [
@@ -37,6 +40,16 @@ vwm:ContactGegevensShape a sh:NodeShape ;
     sh:datatype xsd:string ;
     sh:minCount 1 ;
     sh:order 2 ;
+  ] .
+
+vwm:AfhankelijkeTBShape a sh:NodeShape ;
+  sh:targetClass vwm:AfhankelijkeTB ;
+  sh:property [
+    sh:path vwm:verwijstNaar ;
+    sh:nodeKind sh:IRI ;
+    sh:class vwm:ToestandsBeschrijving ;
+    sh:minCount 1 ;
+    sh:maxCount 1 ;
   ] .
 
 vwm:IncidentBeschrijvingShape a sh:NodeShape ;
@@ -148,6 +161,9 @@ vwm:VoertuigBeschrijvingShape a sh:NodeShape ;
     vwm:isIdentityKey true ;
     vwm:identityNormalizer "ALNUM_UPPER" ;
   ] .
+
+vwm:VoertuigBeschrijving vwm:isFindableInOtherCase true .
+vwm:VoertuigBeschrijving vwm:searchProperty dpm:licensePlate .
 
 vwm:IncidentToestandsWeergaveShape a sh:NodeShape ;
   sh:targetClass vwm:IncidentToestandsWeergave ;

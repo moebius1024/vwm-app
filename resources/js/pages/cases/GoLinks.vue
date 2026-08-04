@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { Head, Link } from '@inertiajs/vue3';
+import { Head, Link, router } from '@inertiajs/vue3';
 import axios from 'axios';
 import { computed, ref, watch } from 'vue';
-import { start } from '@/routes/cases';
+import { store as followDependentState } from '@/routes/api/toestand/follow';
+import { consult, start } from '@/routes/cases';
 
 type ToestandItem = {
   mutatie_id: number;
@@ -12,6 +13,15 @@ type ToestandItem = {
   tb_class: string | null;
   tb_data: Record<string, unknown> | string | null;
   created_at: string;
+  can_follow_as_dependent?: boolean;
+  already_followed_by_origin?: boolean;
+  dependent_info?: {
+    is_dependent?: boolean;
+    source_goic_id?: number | null;
+    source_case_id?: number | null;
+    source_target_class?: string | null;
+    source_state?: ToestandItem | null;
+  } | null;
 };
 
 type GoicItem = {
@@ -36,6 +46,8 @@ type GoicItem = {
 type Props = {
   goUri: string;
   selectedCaseId?: number | null;
+  originGoicId?: number | null;
+  originMode?: 'consult' | 'edit';
   goics?: GoicItem[];
 };
 
@@ -61,12 +73,18 @@ defineOptions({
 const props = defineProps<Props>();
 const labelMap = ref<Record<string, string>>({});
 const goicDisplayMap = ref<Record<string, string>>({});
-const identifierMap = ref<Record<string, { describedClass: string; properties: string[] }>>({});
+const remoteGoicDisplayMap = ref<Record<string, string>>({});
+const identifierMap = ref<Record<string, { describedClass: string; properties: string[]; primaryDisplayProperties: Array<{ property: string; label: string | null }> }>>({});
 const describedClassByTbClass = ref<Record<string, string>>({});
+const followBusyTbUri = ref<string | null>(null);
+const followMessage = ref<string | null>(null);
+const followError = ref<string | null>(null);
 
 const goics = computed(() => props.goics ?? []);
 const isOriginGoic = (goic: GoicItem) => (
-  !!props.selectedCaseId && goic.case_id === props.selectedCaseId
+  props.originGoicId
+    ? goic.id === props.originGoicId
+    : !!props.selectedCaseId && goic.case_id === props.selectedCaseId
 );
 const originGoics = computed(() => goics.value.filter((goic) => isOriginGoic(goic)));
 const otherGoics = computed(() => goics.value.filter((goic) => !isOriginGoic(goic)));
@@ -83,13 +101,57 @@ const editBackHref = computed(() => (
     : '/start'
 ));
 const caseConsultHref = (caseId: number) => {
-  const params = new URLSearchParams({ case: String(caseId), go: props.goUri });
+  const canFollowFromEdit = props.originMode === 'edit' && !!props.selectedCaseId;
 
-  if (props.selectedCaseId) {
-    params.set('follow_target_case', String(props.selectedCaseId));
+  return consult.url({
+    query: {
+      case: caseId,
+      go: props.goUri,
+      follow_target_case: canFollowFromEdit ? props.selectedCaseId : undefined,
+      follow_mode: canFollowFromEdit ? 'edit' : undefined,
+    },
+  });
+};
+
+const canFollowToestand = (goic: GoicItem, tb: ToestandItem) => (
+  props.originMode === 'edit'
+  && !!props.originGoicId
+  && !!props.selectedCaseId
+  && goic.case_id !== props.selectedCaseId
+  && tb.can_follow_as_dependent === true
+  && !!tb.tb_rdf_uri
+);
+
+const isAlreadyFollowed = (tb: ToestandItem) => tb.already_followed_by_origin === true;
+
+const followToestand = async (tb: ToestandItem) => {
+  if (!props.selectedCaseId || !props.originGoicId || !tb.tb_rdf_uri) {
+    return;
   }
 
-  return `/raadplegen?${params.toString()}`;
+  if (!window.confirm('Wil je deze beschrijving volgen in jouw registratie?')) {
+    return;
+  }
+
+  followBusyTbUri.value = tb.tb_rdf_uri;
+  followMessage.value = null;
+  followError.value = null;
+
+  try {
+    const response = await axios.post(followDependentState.url(), {
+      case_id: props.selectedCaseId,
+      target_goic_id: props.originGoicId,
+      source_tb_uri: tb.tb_rdf_uri,
+    });
+    followMessage.value = response.data?.message ?? 'De beschrijving wordt nu gevolgd.';
+    router.reload({ only: ['goics'] });
+  } catch (error) {
+    followError.value = axios.isAxiosError(error)
+      ? (error.response?.data?.error ?? 'Volgen van deze beschrijving is mislukt.')
+      : 'Volgen van deze beschrijving is mislukt.';
+  } finally {
+    followBusyTbUri.value = null;
+  }
 };
 
 const isUri = (value: unknown): value is string =>
@@ -271,9 +333,17 @@ const buildGoicDisplayMap = (items: GoicItem[]) => {
     };
 
     const readableIdentifier = pickReadableIdentifier(identifierValue);
-    map[goic.rdf_uri] = readableIdentifier
+    const display = readableIdentifier
       ? `${classLabel} #${goic.id}, ${readableIdentifier}`
       : `${classLabel} #${goic.id}`;
+    const primaryDisplayParts = idConfig?.primaryDisplayProperties.map(({ property, label }) => {
+      const value = (lastTb.tb_data as Record<string, unknown>)[property];
+
+      return value === null || value === undefined || value === '' ? null : `${label ?? shortId(property)} ${formatValue(value)}`;
+    }) ?? [];
+    map[goic.rdf_uri] = primaryDisplayParts.length > 0 && primaryDisplayParts.every((part) => part !== null)
+      ? primaryDisplayParts.join(' ')
+      : display;
   });
   goicDisplayMap.value = map;
 };
@@ -331,7 +401,7 @@ const formatValue = (value: unknown) => {
 
   if (Array.isArray(value)) {
     return value
-      .map((item) => labelFor(item) ?? goicDisplayMap.value[item as string] ?? (isUri(item) ? shortId(item) : 'Onbekend'))
+      .map((item) => labelFor(item) ?? goicDisplayMap.value[item as string] ?? remoteGoicDisplayMap.value[item as string] ?? (isUri(item) ? 'Gekoppeld object' : 'Onbekend'))
       .join(', ');
   }
 
@@ -342,6 +412,12 @@ const formatValue = (value: unknown) => {
       return goicDisplayMap.value[uri];
     }
 
+    if (remoteGoicDisplayMap.value[uri]) {
+      const display = remoteGoicDisplayMap.value[uri];
+
+      return display.startsWith('GOIC ') ? 'Gekoppeld object' : display;
+    }
+
     const label = labelFor(uri);
 
     if (label) {
@@ -349,7 +425,7 @@ const formatValue = (value: unknown) => {
     }
 
     if (uri.includes('/data/goic/')) {
-      return `GOIC ${shortId(uri)}`;
+      return 'Gekoppeld object';
     }
 
     return shortId(uri);
@@ -360,6 +436,10 @@ const formatValue = (value: unknown) => {
   }
 
   return String(value);
+};
+
+const formatFieldValue = (key: string, value: unknown) => {
+  return formatValue(value);
 };
 
 const isSelfReferenceValue = (value: unknown, goic: GoicItem, key: string) => {
@@ -449,6 +529,27 @@ const visibleToestanden = (goic: GoicItem) => {
   return goic.toestanden.filter((tb) => !isAssociationToestand(tb));
 };
 
+const isDependentToestand = (tb: ToestandItem) => tb.dependent_info?.is_dependent === true;
+
+const dependentSourceState = (tb: ToestandItem) => tb.dependent_info?.source_state ?? null;
+
+const visibleToestandEntries = (tb: ToestandItem): [string, unknown][] => {
+  return tbEntries(dependentSourceState(tb) ?? tb);
+};
+
+const dependentSourceSummary = (tb: ToestandItem) => {
+  const targetClass = tb.dependent_info?.source_target_class;
+  const sourceGoicId = tb.dependent_info?.source_goic_id;
+  const sourceCaseId = tb.dependent_info?.source_case_id;
+  if (!targetClass || !sourceGoicId || !sourceCaseId) {
+    return 'Van bronbeschrijving';
+  }
+
+  const label = labelFor(targetClass) ?? shortId(targetClass);
+
+  return `Van ${label} #${sourceGoicId}, Case #${sourceCaseId}`;
+};
+
 const visibleFollowSourceEntries = (goic: GoicItem): [string, unknown][] => {
   const state = goic.follow_info?.source_state;
 
@@ -463,20 +564,25 @@ const collectUris = (items: GoicItem[]) => {
   const set = new Set<string>();
   items.forEach((goic) => {
     goic.toestanden.forEach((tb) => {
-      if (tb.tb_class) {
-        set.add(tb.tb_class);
+      if (tb.dependent_info?.source_target_class) {
+        set.add(tb.dependent_info.source_target_class);
       }
 
-      if (tb.tb_rdf_uri) {
-        set.add(tb.tb_rdf_uri);
-      }
+      [tb, dependentSourceState(tb)].filter((state): state is ToestandItem => state !== null).forEach((state) => {
+        if (state.tb_class) {
+          set.add(state.tb_class);
+        }
 
-      if (tb.sjabloon_uri) {
-        set.add(tb.sjabloon_uri);
-      }
+        if (state.tb_rdf_uri) {
+          set.add(state.tb_rdf_uri);
+        }
 
-      if (tb.tb_data && typeof tb.tb_data === 'object' && !Array.isArray(tb.tb_data)) {
-        Object.entries(tb.tb_data).forEach(([key, value]) => {
+        if (state.sjabloon_uri) {
+          set.add(state.sjabloon_uri);
+        }
+
+        if (state.tb_data && typeof state.tb_data === 'object' && !Array.isArray(state.tb_data)) {
+          Object.entries(state.tb_data).forEach(([key, value]) => {
           if (isUri(key)) {
             set.add(key);
           }
@@ -493,7 +599,8 @@ const collectUris = (items: GoicItem[]) => {
             });
           }
         });
-      }
+        }
+      });
     });
   });
 
@@ -594,12 +701,13 @@ const loadLabels = async () => {
   try {
     const identifiersResponse = await axios.get(apiUrl('/api/identifiers'));
     const list = identifiersResponse.data.identifiers ?? [];
-    const map: Record<string, { describedClass: string; properties: string[] }> = {};
-    list.forEach((row: { tb_class: string; described_class: string; properties: string[] }) => {
+    const map: Record<string, { describedClass: string; properties: string[]; primaryDisplayProperties: Array<{ property: string; label: string | null }> }> = {};
+    list.forEach((row: { tb_class: string; described_class: string; properties: string[]; primary_display_properties?: Array<{ property: string; label: string | null }> }) => {
       if (row.tb_class) {
         map[row.tb_class] = {
           describedClass: row.described_class,
           properties: row.properties ?? [],
+          primaryDisplayProperties: row.primary_display_properties ?? [],
         };
       }
     });
@@ -611,6 +719,20 @@ const loadLabels = async () => {
 
   await ensureClassLabels();
   buildGoicDisplayMap(goics.value);
+
+  const knownGoicUris = new Set(Object.keys(goicDisplayMap.value));
+  const referencedGoicUris = uris.filter((uri) => uri.includes('/data/goic/') && !knownGoicUris.has(uri));
+  if (referencedGoicUris.length) {
+    try {
+      const response = await axios.post(apiUrl('/api/goic/displays'), { uris: referencedGoicUris });
+      remoteGoicDisplayMap.value = response.data?.labels ?? {};
+    } catch (error) {
+      console.error('Fout bij ophalen gekoppelde objectnamen:', error);
+      remoteGoicDisplayMap.value = {};
+    }
+  } else {
+    remoteGoicDisplayMap.value = {};
+  }
 };
 
 watch(() => props.goics, () => {
@@ -628,9 +750,6 @@ watch(() => props.goics, () => {
           <h1 class="text-2xl font-semibold tracking-tight text-gray-900 dark:text-white">Raadplegen gekoppelde Registraties.</h1>
           <p class="text-sm text-gray-600 dark:text-gray-300">
             Overzicht van alle Registraties die via de Sleutelhanger gekoppeld zijn.
-          </p>
-          <p class="text-xs text-gray-600 dark:text-gray-300">
-            (ID Sleutelhanger: <span class="break-all font-mono text-[11px]">{{ goUri }}</span>)
           </p>
         </div>
         <div class="flex flex-wrap justify-end gap-2">
@@ -663,6 +782,18 @@ watch(() => props.goics, () => {
         </div>
 
         <div v-else class="space-y-4">
+          <div
+            v-if="followMessage"
+            class="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-900 dark:border-emerald-300/30 dark:bg-emerald-900/20 dark:text-emerald-100"
+          >
+            {{ followMessage }}
+          </div>
+          <div
+            v-if="followError"
+            class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900 dark:border-red-300/30 dark:bg-red-900/20 dark:text-red-100"
+          >
+            {{ followError }}
+          </div>
           <div class="rounded-xl border border-indigo-200 bg-indigo-50/50 px-4 py-3 text-sm text-indigo-900 dark:border-indigo-300/30 dark:bg-indigo-900/20 dark:text-indigo-100">
             Totaal {{ totalGoicCount }} Registraties, waarvan {{ otherGoicCount }} in andere cases.
           </div>
@@ -713,7 +844,7 @@ watch(() => props.goics, () => {
                           Bekijk bestand
                         </a>
                       </span>
-                      <span v-else class="break-all">{{ formatValue(value) }}</span>
+                      <span v-else class="break-all">{{ formatFieldValue(String(key), value) }}</span>
                     </div>
                   </template>
                 </div>
@@ -721,8 +852,14 @@ watch(() => props.goics, () => {
 
               <div v-if="visibleToestanden(goic).length" class="mt-3 space-y-2">
                 <div v-for="tb in visibleToestanden(goic)" :key="tb.mutatie_id" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                  <div v-if="tbEntries(tb).length" class="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-200">
-                    <template v-for="([key, value]) in tbEntries(tb)" :key="key">
+                  <div
+                    v-if="isDependentToestand(tb)"
+                    class="mb-3 rounded-md border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900 dark:border-indigo-400/30 dark:bg-indigo-900/20 dark:text-indigo-100"
+                  >
+                    {{ dependentSourceSummary(tb) }}
+                  </div>
+                  <div v-if="visibleToestandEntries(tb).length" class="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-200">
+                    <template v-for="([key, value]) in visibleToestandEntries(tb)" :key="key">
                       <div
                         v-if="!shouldSkipFieldForGoic(String(key), value, goic)"
                         class="flex flex-wrap items-start gap-2"
@@ -746,12 +883,12 @@ watch(() => props.goics, () => {
                           </a>
                         </span>
                         <span v-else class="break-all text-gray-800 dark:text-gray-100">
-                          {{ formatValue(value) }}
+                          {{ formatFieldValue(String(key), value) }}
                         </span>
                       </div>
                     </template>
                   </div>
-                  <pre v-else class="mt-2 overflow-x-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ formatValue(tb.tb_data) }}</pre>
+                  <pre v-else class="mt-2 overflow-x-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ formatValue(dependentSourceState(tb)?.tb_data ?? tb.tb_data) }}</pre>
                 </div>
               </div>
               <div v-else class="mt-2 text-xs text-gray-500 dark:text-gray-400">
@@ -762,7 +899,7 @@ watch(() => props.goics, () => {
 
           <div v-if="otherGoics.length" class="space-y-3">
             <h2 class="text-sm font-semibold uppercase tracking-wide text-gray-700 dark:text-gray-200">
-              Andere Cases
+              Andere registraties
             </h2>
             <div v-for="goic in otherGoics" :key="`other-${goic.id}`" class="rounded-xl border border-gray-200 p-5 dark:border-gray-700">
               <div class="flex flex-wrap items-start justify-between gap-3">
@@ -812,7 +949,7 @@ watch(() => props.goics, () => {
                         Bekijk bestand
                       </a>
                     </span>
-                    <span v-else class="break-all">{{ formatValue(value) }}</span>
+                    <span v-else class="break-all">{{ formatFieldValue(String(key), value) }}</span>
                   </div>
                 </template>
               </div>
@@ -820,8 +957,31 @@ watch(() => props.goics, () => {
 
             <div v-if="visibleToestanden(goic).length" class="mt-3 space-y-2">
               <div v-for="tb in visibleToestanden(goic)" :key="tb.mutatie_id" class="rounded-lg border border-gray-200 bg-white p-3 dark:border-gray-700 dark:bg-gray-900">
-                <div v-if="tbEntries(tb).length" class="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-200">
-                  <template v-for="([key, value]) in tbEntries(tb)" :key="key">
+                <div
+                  v-if="isAlreadyFollowed(tb)"
+                  class="mb-2 rounded-md border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-right text-xs font-semibold text-indigo-800 dark:border-indigo-300/30 dark:bg-indigo-900/30 dark:text-indigo-100"
+                >
+                  Wordt al gevolgd in jouw registratie
+                </div>
+                <div v-if="canFollowToestand(goic, tb)" class="flex justify-end">
+                  <button
+                    v-if="!isAlreadyFollowed(tb)"
+                    type="button"
+                    class="inline-flex items-center rounded-md bg-amber-500 px-2.5 py-1 text-xs font-semibold text-white transition hover:bg-amber-600 disabled:cursor-not-allowed disabled:opacity-60"
+                    :disabled="followBusyTbUri === tb.tb_rdf_uri"
+                    @click="followToestand(tb)"
+                  >
+                    {{ followBusyTbUri === tb.tb_rdf_uri ? 'Volgen...' : 'Volg deze beschrijving' }}
+                  </button>
+                </div>
+                <div
+                  v-if="isDependentToestand(tb)"
+                  class="mb-3 rounded-md border border-indigo-200 bg-indigo-50/60 px-3 py-2 text-xs text-indigo-900 dark:border-indigo-400/30 dark:bg-indigo-900/20 dark:text-indigo-100"
+                >
+                  {{ dependentSourceSummary(tb) }}
+                </div>
+                <div v-if="visibleToestandEntries(tb).length" class="mt-2 space-y-1 text-xs text-gray-700 dark:text-gray-200">
+                  <template v-for="([key, value]) in visibleToestandEntries(tb)" :key="key">
                     <div
                       v-if="!shouldSkipFieldForGoic(String(key), value, goic)"
                       class="flex flex-wrap items-start gap-2"
@@ -845,12 +1005,12 @@ watch(() => props.goics, () => {
                         </a>
                       </span>
                       <span v-else class="break-all text-gray-800 dark:text-gray-100">
-                        {{ formatValue(value) }}
+                        {{ formatFieldValue(String(key), value) }}
                       </span>
                     </div>
                   </template>
                 </div>
-                <pre v-else class="mt-2 overflow-x-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ formatValue(tb.tb_data) }}</pre>
+                <pre v-else class="mt-2 overflow-x-auto rounded bg-gray-50 p-2 text-xs text-gray-700 dark:bg-gray-800 dark:text-gray-200">{{ formatValue(dependentSourceState(tb)?.tb_data ?? tb.tb_data) }}</pre>
               </div>
             </div>
             <div v-else class="mt-2 text-xs text-gray-500 dark:text-gray-400">

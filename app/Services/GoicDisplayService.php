@@ -9,6 +9,7 @@ class GoicDisplayService
 {
     public function __construct(
         private readonly GraphService $graphService,
+        private readonly SjabloonMetadataService $metadataService,
     ) {}
 
     /**
@@ -40,11 +41,12 @@ class GoicDisplayService
             $goicByUri[$row->goic_uri] = (int) $row->goic_id;
         }
 
+        $identifierMetadata = $this->identifierMetadataByTbClass();
         $labels = [];
         foreach ($uris as $uri) {
             $goicId = $goicByUri[$uri] ?? null;
             if (! is_int($goicId) || $goicId <= 0) {
-                $labels[$uri] = $this->resolveGoicLabelFromGraph($uri) ?? "GOIC {$this->shortId($uri)}";
+                $labels[$uri] = $this->resolveGoicLabelFromGraph($uri, $identifierMetadata) ?? "GOIC {$this->shortId($uri)}";
 
                 continue;
             }
@@ -63,37 +65,121 @@ class GoicDisplayService
                     continue;
                 }
 
-                $kenteken = $this->extractValueBySuffix($data, '#licensePlate')
-                    ?? $this->extractValueBySuffix($data, 'licensePlate')
-                    ?? $this->extractValueBySuffix($data, '#kenteken')
-                    ?? $this->extractValueBySuffix($data, 'kenteken');
-
-                if (is_string($kenteken) && trim($kenteken) !== '') {
-                    $labels[$uri] = 'Voertuig: '.trim($kenteken);
+                $display = $this->displayForStateData(
+                    (string) ($row->sjabloon_uri ?? ''),
+                    $data,
+                    $identifierMetadata,
+                );
+                if ($display !== null) {
+                    $labels[$uri] = $display;
 
                     continue 2;
                 }
             }
 
-            $labels[$uri] = $label;
+            $labels[$uri] = $this->resolveGoicLabelFromGraph($uri, $identifierMetadata) ?? $label;
         }
 
         return $labels;
     }
 
-    private function extractValueBySuffix(array $data, string $suffix): ?string
+    /**
+     * @return array<string, array{class_label:string,properties:array<int, string>,primary_display_properties:array<int, array{property:string,label:?string}>}>
+     */
+    private function identifierMetadataByTbClass(): array
     {
-        foreach ($data as $key => $value) {
-            if (! is_string($key) || ! str_ends_with($key, $suffix)) {
+        try {
+            $metadata = $this->metadataService->listIdentifiers();
+        } catch (Throwable) {
+            return [];
+        }
+
+        $describedClasses = array_values(array_unique(array_filter(array_column($metadata, 'described_class'), 'is_string')));
+        try {
+            $classLabels = $this->metadataService->listLabels($describedClasses);
+        } catch (Throwable) {
+            $classLabels = [];
+        }
+
+        $byTbClass = [];
+        foreach ($metadata as $entry) {
+            $tbClass = $entry['tb_class'] ?? null;
+            $describedClass = $entry['described_class'] ?? null;
+            $properties = $entry['properties'] ?? null;
+            if (! is_string($tbClass) || ! is_string($describedClass) || ! is_array($properties)) {
                 continue;
             }
 
-            if (is_string($value) && trim($value) !== '') {
-                return $value;
+            $primaryDisplayProperties = $entry['primary_display_properties'] ?? [];
+            if ($primaryDisplayProperties === [] && is_string($entry['primary_display_property'] ?? null)) {
+                $primaryDisplayProperties = [[
+                    'property' => $entry['primary_display_property'],
+                    'label' => $entry['primary_display_label'] ?? null,
+                ]];
             }
+
+            $byTbClass[$tbClass] = [
+                'class_label' => is_string($classLabels[$describedClass] ?? null)
+                    ? $classLabels[$describedClass]
+                    : $this->shortId($describedClass),
+                'properties' => array_values(array_filter($properties, 'is_string')),
+                'primary_display_properties' => array_values(array_filter(
+                    $primaryDisplayProperties,
+                    fn (mixed $property): bool => is_array($property) && is_string($property['property'] ?? null),
+                )),
+            ];
         }
 
-        return null;
+        return $byTbClass;
+    }
+
+    /**
+     * @param  array<string, mixed>  $data
+     * @param  array<string, array{class_label:string,properties:array<int, string>,primary_display_properties:array<int, array{property:string,label:?string}>}>  $identifierMetadata
+     */
+    private function displayForStateData(string $tbClass, array $data, array $identifierMetadata, ?string $targetClassLabel = null): ?string
+    {
+        $identifier = $identifierMetadata[$tbClass] ?? null;
+        if (! is_array($identifier)) {
+            return null;
+        }
+
+        $primaryDisplayParts = [];
+        foreach ($identifier['primary_display_properties'] as $primaryDisplayProperty) {
+            $property = $primaryDisplayProperty['property'];
+            $value = $data[$property] ?? null;
+            if (! is_scalar($value) || trim((string) $value) === '') {
+                $primaryDisplayParts = [];
+
+                break;
+            }
+
+            $label = $primaryDisplayProperty['label'] ?? $this->shortId($property);
+            $primaryDisplayParts[] = "{$label} ".trim((string) $value);
+        }
+        if ($primaryDisplayParts !== []) {
+            return implode(' ', $primaryDisplayParts);
+        }
+
+        $values = [];
+        foreach ($identifier['properties'] as $property) {
+            $value = $data[$property] ?? null;
+            if (! is_string($value) || trim($value) === '') {
+                continue;
+            }
+
+            $values[] = trim($value);
+        }
+
+        $values = array_values(array_unique($values));
+
+        if ($values === []) {
+            return null;
+        }
+
+        $classLabel = $targetClassLabel ?: $identifier['class_label'];
+
+        return "{$classLabel}: ".implode(', ', $values);
     }
 
     private function shortId(string $uri): string
@@ -110,7 +196,10 @@ class GoicDisplayService
         return (string) end($parts);
     }
 
-    private function resolveGoicLabelFromGraph(string $goicUri): ?string
+    /**
+     * @param  array<string, array{class_label:string,properties:array<int, string>,primary_display_properties:array<int, array{property:string,label:?string}>}>  $identifierMetadata
+     */
+    private function resolveGoicLabelFromGraph(string $goicUri, array $identifierMetadata): ?string
     {
         if (! str_contains($goicUri, '/data/goic/')) {
             return null;
@@ -119,16 +208,18 @@ class GoicDisplayService
         $query = "
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
             PREFIX dpm: <http://ontologie.politie.nl/def/dpm#>
-            SELECT ?plate ?brand ?model
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+            SELECT ?tb ?tbClass ?targetClass ?targetClassLabel ?property ?value
             WHERE {
-                ?tb vwm:beschrijftGOIC <{$goicUri}> .
-                OPTIONAL { ?tb dpm:licensePlate ?plate . }
-                OPTIONAL { ?tb dpm:brand ?brand . }
-                OPTIONAL { ?tb dpm:model ?model . }
-                OPTIONAL { ?tb vwm:geregistreerdOp ?at . }
+                <{$goicUri}> vwm:heeftDoelClass ?targetClass .
+                OPTIONAL { ?targetClass rdfs:label ?targetClassLabel . }
+                ?tb vwm:beschrijftGOIC <{$goicUri}> ;
+                    a ?tbClass ;
+                    ?property ?value .
+                FILTER(isLiteral(?value))
+                FILTER NOT EXISTS { ?tb dpm:invalidatedAtTime ?invalidatedAt . }
             }
-            ORDER BY DESC(?at)
-            LIMIT 1
+            ORDER BY ?tb ?property
         ";
 
         try {
@@ -137,15 +228,34 @@ class GoicDisplayService
             return null;
         }
 
-        $plate = $rows[0]['plate'] ?? null;
-        if (is_string($plate) && trim($plate) !== '') {
-            return 'Voertuig: '.trim($plate);
+        $states = [];
+        foreach ($rows as $row) {
+            $tbUri = $row['tb'] ?? null;
+            $tbClass = $row['tbClass'] ?? null;
+            $property = $row['property'] ?? null;
+            $value = $row['value'] ?? null;
+            if (! is_string($tbUri) || ! is_string($tbClass) || ! is_string($property) || ! is_string($value)) {
+                continue;
+            }
+
+            $states[$tbUri] ??= [
+                'tb_class' => $tbClass,
+                'target_class_label' => is_string($row['targetClassLabel'] ?? null) ? $row['targetClassLabel'] : null,
+                'data' => [],
+            ];
+            $states[$tbUri]['data'][$property] = $value;
         }
 
-        $brand = is_string($rows[0]['brand'] ?? null) ? trim((string) $rows[0]['brand']) : '';
-        $model = is_string($rows[0]['model'] ?? null) ? trim((string) $rows[0]['model']) : '';
-        if ($brand !== '' || $model !== '') {
-            return 'Voertuig: '.trim("{$brand} {$model}");
+        foreach ($states as $state) {
+            $display = $this->displayForStateData(
+                $state['tb_class'],
+                $state['data'],
+                $identifierMetadata,
+                $state['target_class_label'],
+            );
+            if ($display !== null) {
+                return $display;
+            }
         }
 
         return null;

@@ -1,6 +1,8 @@
 <?php
 
 use App\Http\Controllers\BestandController;
+use App\Http\Controllers\DependentStateController;
+use App\Http\Controllers\IdentityLinkController;
 use App\Http\Controllers\MutatieController;
 use App\Http\Controllers\ReferenceConceptController;
 use App\Http\Controllers\SjabloonController;
@@ -32,4 +34,6 @@ Route::middleware(['web', 'auth'])->group(function () {
     Route::post('/goic/volg-incident', [MutatieController::class, 'volgGoic'])->name('api.goic.volg_incident');
     Route::post('/goic/ontvolg', [MutatieController::class, 'ontvolgGoic'])->name('api.goic.ontvolg');
     Route::post('/goic/displays', [MutatieController::class, 'resolveGoicDisplays'])->name('api.goic.displays.resolve');
+    Route::post('/identiteit/koppel', [IdentityLinkController::class, 'store'])->name('api.identity.link-existing.store');
+    Route::post('/toestand/volg', [DependentStateController::class, 'store'])->name('api.toestand.follow.store');
 });

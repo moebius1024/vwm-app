@@ -179,6 +179,10 @@
 <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "ToestandsBeschrijving" .
 
+<http://ontologie.politie.nl/def/vwm#AfhankelijkeTB> a <http://www.w3.org/2002/07/owl#Class>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "Afhankelijke toestandsbeschrijving";
+  <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
+
 <http://ontologie.politie.nl/def/vwm#Kern> a <http://www.w3.org/2002/07/owl#Class>;
   <http://www.w3.org/2000/01/rdf-schema#label> "Kern";
   <http://www.w3.org/2000/01/rdf-schema#subClassOf> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving> .
@@ -393,6 +397,11 @@
 <http://ontologie.politie.nl/def/vwm#beschrijftGOIC> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
   <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#GegevensObjectInContext> .
+
+<http://ontologie.politie.nl/def/vwm#verwijstNaar> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
+  <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#AfhankelijkeTB>;
+  <http://www.w3.org/2000/01/rdf-schema#range> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;
+  <http://www.w3.org/2000/01/rdf-schema#label> "verwijst naar" .
 
 <http://ontologie.politie.nl/def/vwm#heeftBronGOIC> a <http://www.w3.org/2002/07/owl#ObjectProperty>;
   <http://www.w3.org/2000/01/rdf-schema#domain> <http://ontologie.politie.nl/def/vwm#ToestandsBeschrijving>;

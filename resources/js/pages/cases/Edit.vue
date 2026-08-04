@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, Link, router } from '@inertiajs/vue3';
+import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import { computed, ref } from 'vue';
 import CaseConsultPanel from '@/components/CaseConsultPanel.vue';
 import DynamicObjectForm from '@/components/DynamicObjectForm.vue';
@@ -68,6 +68,7 @@ defineOptions({
 });
 
 const props = defineProps<Props>();
+const page = usePage();
 const isDossierCreationEnabled = false;
 const selectedTransactieId = ref<number | null>(props.transactieSoorten?.[0]?.id ?? null);
 const mutationTarget = ref<MutationTarget | null>(null);
@@ -84,6 +85,17 @@ const caseTitle = computed(() => {
   }
 
   return 'Case bewerken';
+});
+const backToStartHref = computed(() => {
+  const caseSoortId = new URL(page.url, 'http://localhost').searchParams.get('case_soort');
+
+  return start({ query: { case_soort: caseSoortId ?? undefined } });
+});
+const caseSoortId = computed(() => {
+  const value = new URL(page.url, 'http://localhost').searchParams.get('case_soort');
+  const caseSoortId = Number(value);
+
+  return Number.isInteger(caseSoortId) && caseSoortId > 0 ? caseSoortId : null;
 });
 
 const refreshDossiers = () => {
@@ -134,7 +146,7 @@ const createDossier = () => {
             Registreer nieuwe gegevens en raadpleeg bestaande inhoud in dezelfde case.
           </p>
         </div>
-        <Link class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30" href="/start">
+        <Link class="inline-flex items-center rounded-lg border border-emerald-200 bg-white px-4 py-2 text-sm font-semibold text-emerald-800 shadow-sm transition hover:bg-emerald-50 dark:border-emerald-300/30 dark:bg-gray-900 dark:text-emerald-100 dark:hover:bg-emerald-900/30" :href="backToStartHref">
           Terug naar start
         </Link>
       </div>
@@ -149,9 +161,10 @@ const createDossier = () => {
         <div>
           <DynamicObjectForm
             v-if="selectedTransactieId"
-            :transactie-soort-id="selectedTransactieId"
-            :case-id="caseId"
-            :dossiers="dossiers"
+          :transactie-soort-id="selectedTransactieId"
+          :case-id="caseId"
+          :case-soort-id="caseSoortId"
+          :dossiers="dossiers"
             :mutation-target="mutationTarget"
             @saved="refreshDossiers"
             @cancel-mutate="clearMutationTarget"
@@ -210,7 +223,7 @@ const createDossier = () => {
     <div v-else class="rounded-xl border border-dashed border-gray-300 p-8 text-center text-gray-600 dark:border-gray-700 dark:text-gray-300">
       Er is nog geen case geselecteerd. Ga naar de startpagina om een case te openen of aan te maken.
       <div class="mt-4">
-        <Link class="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700" href="/start">
+        <Link class="inline-flex items-center rounded-lg bg-amber-600 px-4 py-2 text-sm font-semibold text-white hover:bg-amber-700" :href="backToStartHref">
           Naar case-keuze
         </Link>
       </div>

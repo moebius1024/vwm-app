@@ -16,7 +16,7 @@ class GoicUnfollowAction
      */
     public function execute(array $input, int $caseId, int $userId): array
     {
-        $context = $this->caseMutationContextService->resolveUnfollowContext($caseId, $userId);
+        $context = $this->caseMutationContextService->resolveTransactionContext($caseId, $userId);
         if (($context['reason'] ?? null) === 'case_not_accessible') {
             return $this->error('Geen toegang tot deze case.', null, 403);
         }

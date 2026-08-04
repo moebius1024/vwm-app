@@ -32,6 +32,47 @@ it('keeps the start page in start mode', function () {
         );
 });
 
+it('does not enable following from a consult URL', function () {
+    $user = User::factory()->create();
+    $caseSoortIds = seedCaseSelectionAuthorization($user->id);
+    $caseId = createCaseForSelection($user->id, $caseSoortIds['Alfa']);
+
+    $this->actingAs($user)
+        ->get(route('cases.consult', [
+            'case' => $caseId,
+            'follow_target_case' => $caseId,
+            'follow_mode' => 'consult',
+            'go' => 'http://example.test/go/consult-only',
+        ]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('cases/Consult')
+            ->where('followTargetCaseId', null),
+        );
+});
+
+it('returns the selected case type to both case selection pages', function () {
+    $user = User::factory()->create();
+    $caseSoortIds = seedCaseSelectionAuthorization($user->id);
+
+    $this->actingAs($user)
+        ->get(route('cases.start', ['case_soort' => $caseSoortIds['Alfa']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('cases/Start')
+            ->where('selectedCaseSoortId', $caseSoortIds['Alfa']),
+        );
+
+    $this->actingAs($user)
+        ->get(route('cases.consult', ['case_soort' => $caseSoortIds['Alfa']]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('cases/Start')
+            ->where('mode', 'consult')
+            ->where('selectedCaseSoortId', $caseSoortIds['Alfa']),
+        );
+});
+
 it('sorts the case selection by descending case number', function () {
     $user = User::factory()->create();
     $caseSoortIds = seedCaseSelectionAuthorization($user->id);
@@ -52,6 +93,45 @@ it('sorts the case selection by descending case number', function () {
             ->where('cases.2.id', $zebraCaseId)
             ->where('cases.2.case_soort_naam', 'Zebra')
             ->where('cases.0.case_soort_id', $caseSoortIds['Alfa']),
+        );
+});
+
+it('groups authorized cases from other teams on the consult selection page', function () {
+    $user = User::factory()->create();
+    $caseSoortIds = seedCaseSelectionAuthorization($user->id);
+    $otherTeamUser = User::factory()->create();
+    $otherTeamId = DB::table('teams')->insertGetId([
+        'naam' => 'Ander selectieteam',
+        'code' => 'ANDER-SELECTIE-'.uniqid(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    DB::table('medewerkers')->insert([
+        'user_id' => $otherTeamUser->id,
+        'team_id' => $otherTeamId,
+        'medewerker_nummer' => 'ANDER-MW-'.uniqid(),
+        'created_at' => now(),
+        'updated_at' => now(),
+    ]);
+    $otherCaseId = createCaseForSelection($otherTeamUser->id, $caseSoortIds['Alfa']);
+
+    $this->actingAs($user)
+        ->get(route('cases.consult'))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('cases/Start')
+            ->has('otherTeamCases', 1)
+            ->where('otherTeamCases.0.id', $otherTeamId)
+            ->where('otherTeamCases.0.naam', 'Ander selectieteam')
+            ->where('otherTeamCases.0.cases.0.id', $otherCaseId),
+        );
+
+    $this->actingAs($user)
+        ->get(route('cases.consult', ['case' => $otherCaseId]))
+        ->assertOk()
+        ->assertInertia(fn (Assert $page) => $page
+            ->component('cases/Consult')
+            ->where('activeCase.id', $otherCaseId),
         );
 });
 

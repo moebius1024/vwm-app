@@ -125,9 +125,11 @@ class SjabloonMetadataService
         $shapeGraphs = $this->shapeGraphValuesClause();
 
         $query = '
+            PREFIX ui: <http://ontologie.politie.nl/def/ui#>
             PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
             PREFIX sh: <http://www.w3.org/ns/shacl#>
-            SELECT ?tbClass ?describedClass ?property
+            SELECT ?tbClass ?describedClass ?property ?primaryDisplayLabel ?configuredPrimaryDisplayLabel ?primaryDisplayOrder ?isPrimaryDisplayIdentifier
             WHERE {
                 VALUES ?shapeGraph { '.$shapeGraphs.' }
                 GRAPH ?shapeGraph {
@@ -136,9 +138,21 @@ class SjabloonMetadataService
                     ?propShape sh:path ?property .
                 }
                 GRAPH <'.self::ONTOLOGY_GRAPH.'> {
-                    ?property vwm:isIdentifier true .
                     ?tbClass vwm:beschrijftClass ?describedClass .
+                    OPTIONAL { ?property vwm:isIdentifier ?isIdentifier . }
+                    OPTIONAL { ?property rdfs:label ?primaryDisplayLabel . }
                 }
+                OPTIONAL {
+                    GRAPH <http://vwm.voorbeeld.nl/model/shapes/ui> {
+                        ?shape sh:property ?primaryPropertyShape .
+                        ?primaryPropertyShape sh:path ?property ;
+                                              ui:primaryDisplayIdentifier true .
+                        OPTIONAL { ?primaryPropertyShape ui:primaryDisplayOrder ?primaryDisplayOrder . }
+                        OPTIONAL { ?primaryPropertyShape ui:primaryDisplayLabel ?configuredPrimaryDisplayLabel . }
+                    }
+                    BIND(true AS ?isPrimaryDisplayIdentifier)
+                }
+                FILTER(BOUND(?isIdentifier) || BOUND(?isPrimaryDisplayIdentifier))
             }
             ORDER BY ?tbClass ?property
         ';
@@ -152,10 +166,33 @@ class SjabloonMetadataService
                     'tb_class' => $tbClass,
                     'described_class' => $row['describedClass'],
                     'properties' => [],
+                    'primary_display_properties' => [],
                 ];
             }
-            $map[$tbClass]['properties'][] = $row['property'];
+            $map[$tbClass]['properties'][$row['property']] = true;
+
+            if (($row['isPrimaryDisplayIdentifier'] ?? null) === 'true') {
+                $map[$tbClass]['primary_display_properties'][$row['property']] = [
+                    'property' => $row['property'],
+                    'label' => $row['configuredPrimaryDisplayLabel'] ?? $row['primaryDisplayLabel'] ?? null,
+                    'order' => is_numeric($row['primaryDisplayOrder'] ?? null) ? (int) $row['primaryDisplayOrder'] : PHP_INT_MAX,
+                ];
+            }
         }
+
+        foreach ($map as &$identifier) {
+            $identifier['properties'] = array_values(array_keys($identifier['properties']));
+            $identifier['primary_display_properties'] = array_values($identifier['primary_display_properties']);
+            usort($identifier['primary_display_properties'], fn (array $left, array $right): int => $left['order'] <=> $right['order'] ?: $left['property'] <=> $right['property']);
+            $identifier['primary_display_properties'] = array_map(
+                fn (array $property): array => [
+                    'property' => $property['property'],
+                    'label' => $property['label'],
+                ],
+                $identifier['primary_display_properties'],
+            );
+        }
+        unset($identifier);
 
         return array_values($map);
     }
@@ -427,7 +464,7 @@ class SjabloonMetadataService
         $query = "
             PREFIX sh: <http://www.w3.org/ns/shacl#>
             PREFIX ui: <http://ontologie.politie.nl/def/ui#>
-            SELECT ?tbClass ?buttonLabelRegister ?buttonLabelAttach
+            SELECT ?tbClass ?buttonLabelRegister ?buttonLabelAttach ?sameIdentityActionLabel ?alreadyLinkedLabel
             WHERE {
                 VALUES ?tbClass { {$values} }
                 VALUES ?shapeGraph { {$shapeGraphs} }
@@ -435,6 +472,8 @@ class SjabloonMetadataService
                     ?shape sh:targetClass ?tbClass .
                     OPTIONAL { ?shape ui:buttonLabelRegister ?buttonLabelRegister . }
                     OPTIONAL { ?shape ui:buttonLabelAttach ?buttonLabelAttach . }
+                    OPTIONAL { ?shape ui:sameIdentityActionLabel ?sameIdentityActionLabel . }
+                    OPTIONAL { ?shape ui:alreadyLinkedLabel ?alreadyLinkedLabel . }
                 }
             }
         ";
@@ -451,6 +490,8 @@ class SjabloonMetadataService
                 $map[$tbClass] = [
                     'button_label_register' => null,
                     'button_label_attach' => null,
+                    'same_identity_action_label' => null,
+                    'already_linked_label' => null,
                 ];
             }
 
@@ -462,6 +503,16 @@ class SjabloonMetadataService
             }
             if (is_string($attachLabel) && trim($attachLabel) !== '') {
                 $map[$tbClass]['button_label_attach'] = trim($attachLabel);
+            }
+
+            $sameIdentityActionLabel = $row['sameIdentityActionLabel'] ?? null;
+            if (is_string($sameIdentityActionLabel) && trim($sameIdentityActionLabel) !== '') {
+                $map[$tbClass]['same_identity_action_label'] = trim($sameIdentityActionLabel);
+            }
+
+            $alreadyLinkedLabel = $row['alreadyLinkedLabel'] ?? null;
+            if (is_string($alreadyLinkedLabel) && trim($alreadyLinkedLabel) !== '') {
+                $map[$tbClass]['already_linked_label'] = trim($alreadyLinkedLabel);
             }
         }
 
@@ -509,7 +560,9 @@ class SjabloonMetadataService
         $stateProjectionRoot = 'http://ontologie.politie.nl/def/vwm#ToestandsWeergave';
         $signalementRoot = 'http://ontologie.politie.nl/def/vwm#Signalement';
         $descriptionRoot = 'http://ontologie.politie.nl/def/vwm#Beschrijving';
+        $kernelRoot = 'http://ontologie.politie.nl/def/vwm#Kern';
         $roleRoot = 'http://ontologie.politie.nl/def/vwm#RolBeschrijving';
+        $findableInOtherCase = $this->fetchFindableInOtherCaseTbClasses($classes);
 
         $result = [];
         foreach ($classes as $tbClass) {
@@ -517,8 +570,46 @@ class SjabloonMetadataService
                 'is_state_projection' => $this->isSubclassOrSelf($tbClass, $stateProjectionRoot, $hierarchy),
                 'is_signalement' => $this->isSubclassOrSelf($tbClass, $signalementRoot, $hierarchy),
                 'is_beschrijving' => $this->isSubclassOrSelf($tbClass, $descriptionRoot, $hierarchy),
+                'is_kern_tb' => $this->isSubclassOrSelf($tbClass, $kernelRoot, $hierarchy),
                 'is_role_beschrijving' => $this->isSubclassOrSelf($tbClass, $roleRoot, $hierarchy),
+                'is_findable_in_other_case' => isset($findableInOtherCase[$tbClass]),
+                'search_property' => $findableInOtherCase[$tbClass] ?? null,
             ];
+        }
+
+        return $result;
+    }
+
+    /**
+     * @param  array<int, string>  $tbClasses
+     * @return array<string, string>
+     */
+    private function fetchFindableInOtherCaseTbClasses(array $tbClasses): array
+    {
+        $iriList = implode(' ', array_map(fn (string $tbClass): string => "<{$tbClass}>", $tbClasses));
+        $query = "
+            PREFIX vwm: <http://ontologie.politie.nl/def/vwm#>
+            SELECT ?tbClass ?searchProperty
+            WHERE {
+                VALUES ?tbClass { {$iriList} }
+                ?tbClass vwm:isFindableInOtherCase true ;
+                         vwm:searchProperty ?searchProperty .
+            }
+        ";
+        $result = [];
+
+        try {
+            foreach ($this->graphService->query($query) as $row) {
+                $tbClass = $row['tbClass'] ?? null;
+                $searchProperty = $row['searchProperty'] ?? null;
+                if (is_string($tbClass) && $tbClass !== '' && is_string($searchProperty) && $searchProperty !== '') {
+                    $result[$tbClass] = $searchProperty;
+                }
+            }
+        } catch (\Throwable $exception) {
+            logger()->warning('Kon zoek-capabilities voor andere cases niet uit GraphDB lezen', [
+                'message' => $exception->getMessage(),
+            ]);
         }
 
         return $result;

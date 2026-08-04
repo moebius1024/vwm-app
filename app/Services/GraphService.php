@@ -24,7 +24,7 @@ class GraphService
 
         $response = Http::withHeaders([
             'Accept' => 'application/sparql-results+json',
-        ])->get($endpoint, [
+        ])->asForm()->post($endpoint, [
             'query' => $sparql,
         ]);
 

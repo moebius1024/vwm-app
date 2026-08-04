@@ -1,7 +1,7 @@
 <?php
 
-use App\Http\Controllers\CaseController;
 use App\Http\Controllers\BeheerController;
+use App\Http\Controllers\CaseController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
 
@@ -15,6 +15,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('/cases/{case}/dossiers', [CaseController::class, 'storeDossier'])->name('cases.dossiers.store');
     Route::get('/raadplegen', [CaseController::class, 'consult'])->name('cases.consult');
     Route::get('/raadplegen/go', [CaseController::class, 'consultGo'])->name('cases.consult.go');
+    Route::get('/raadplegen/vinden', [CaseController::class, 'findInOtherCase'])->name('cases.find-in-other-case');
 
     Route::get('/bewerken', [CaseController::class, 'edit'])->name('cases.edit');
     Route::middleware('beheer')->group(function () {

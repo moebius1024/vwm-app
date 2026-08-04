@@ -63,6 +63,8 @@ class SjabloonController extends Controller
                     'is_signalement' => false,
                     'is_beschrijving' => false,
                     'is_role_beschrijving' => false,
+                    'is_findable_in_other_case' => false,
+                    'search_property' => null,
                 ],
             ];
 
